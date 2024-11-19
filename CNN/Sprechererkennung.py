@@ -261,17 +261,17 @@ def process_mp3_file(file_path, model):
 
 # Hauptprogramm
 if __name__ == "__main__":
-    audio_path = os.path.join(os.path.dirname(__file__), "Stimmen")
+    audio_path = os.path.join(os.path.dirname(__file__), "..", "Stimmen")
     model = train_model(audio_path)
     
     # MP3-Datei verarbeiten
-    mp3_file = os.path.join(os.path.dirname(__file__), "Stimmen\Felix_1_1.wav")
+    mp3_file = os.path.join(os.path.dirname(__file__), "..", "Stimmen\Felix_1_1.wav")
     process_mp3_file(mp3_file, model)
-    mp3_file = os.path.join(os.path.dirname(__file__), "Stimmen\Felix_15_2.wav")
+    mp3_file = os.path.join(os.path.dirname(__file__), "..", "Stimmen\Felix_15_2.wav")
     process_mp3_file(mp3_file, model)
-    mp3_file = os.path.join(os.path.dirname(__file__), "Stimmen\Linelle_7_1.wav")
+    mp3_file = os.path.join(os.path.dirname(__file__), "..", "Stimmen\Linelle_7_1.wav")
     process_mp3_file(mp3_file, model)
-    mp3_file = os.path.join(os.path.dirname(__file__), "Stimmen\Linelle_10_2.wav")
+    mp3_file = os.path.join(os.path.dirname(__file__), "..", "Stimmen\Linelle_10_2.wav")
     process_mp3_file(mp3_file, model)
     # audio_buffer = recognize_speech(model) # Aufnahme und Spracherkennung in Echtzeit
     # audio_to_text(audio_buffer) # Methode zur Übersetzung der Audio Dateien in Text.
