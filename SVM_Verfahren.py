@@ -19,8 +19,10 @@ from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.datasets import load_iris
 
+from collections import Counter
+
 # Funktion zur Extraktion von MFCC-Features aus Audiodaten
-def extract_features(audio, sr, n_mfcc=13, n_fft=416, hop_length=512, n_mels=40, max_pad_len=400):
+def extract_features(audio, sr, n_mfcc=13, n_fft=416, hop_length=512, n_mels=64, max_pad_len=400):
     """
     Diese Funktion extrahiert MFCC (Mel-Frequency Cepstral Coefficients) aus den Audiodaten.
     Quelle: https://librosa.org/doc/latest/feature.html#mfcc
@@ -49,6 +51,9 @@ def load_data(audio_folder_path):
     features = []
     labels = []
     audio_list = [file for file in os.listdir(audio_folder_path) if file.endswith(".wav")]
+    
+    print(f"Gesamtzahl Audiodateien : {len(audio_list)}")
+    
     for file in audio_list:
         audio, sr = librosa.load(os.path.join(audio_folder_path, file), sr=None)
         mfccs_features = extract_features(audio, sr)
@@ -65,6 +70,10 @@ def load_data(audio_folder_path):
             #labels.append(2)
         else:
             print(f"Unbekannter Sprecher in Datei: {file}")
+        
+
+    print("Anzahl Dateein von Felix und Linelle: ",Counter(labels))
+    
     return np.array(features), np.array(labels)
 
 
@@ -74,8 +83,8 @@ def load_data(audio_folder_path):
 def create_svm_model(input_shape):
     
     svm_model = SVC()
-    svm_model.C=0.7
-    svm_model.kernel='rbf'
+    svm_model.C=0.1
+    svm_model.kernel='linear'
     svm_model.degree=3
     svm_model.gamma='scale'
     svm_model.coef0=1.0
@@ -83,12 +92,12 @@ def create_svm_model(input_shape):
     svm_model.probability=False
     svm_model.tol=1e-3
     svm_model.cache_size=250
-    svm_model.class_weight=None
+    svm_model.class_weight='balanced'
     svm_model.verbose=1
     svm_model.max_iter=-1
-    svm_model.decision_function_shape='ovr'
-    svm_model.break_ties=True
-    svm_model.random_state=2
+    svm_model.decision_function_shape='ovo'
+    svm_model.break_ties=False
+    svm_model.random_state=None
     
     return svm_model
 
@@ -348,4 +357,6 @@ if __name__ == "__main__":
     mp3_file = os.path.join(os.path.dirname(__file__), "..", "C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Linelle_7_1.wav")
     process_mp3_file(mp3_file, model)
     mp3_file = os.path.join(os.path.dirname(__file__), "..", "C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Linelle_10_2.wav")
+    process_mp3_file(mp3_file, model)
+    mp3_file = os.path.join(os.path.dirname(__file__), "..", "C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\LinelleNew14.wav")
     process_mp3_file(mp3_file, model)
