@@ -9,6 +9,12 @@ import joblib
 from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 import seaborn as sns
+import warnings
+
+# Warnungen ignorieren
+warnings.filterwarnings("ignore", category=UserWarning)
+# Suppress TensorFlow logs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # Funktion zur Extraktion von MFCC-Features aus Audiodaten
 def extract_features(audio, sr, n_mfcc=13, n_fft=416, hop_length=512, n_mels=64, max_pad_len=400):
@@ -64,8 +70,6 @@ def load_data(audio_folder_path):
     return np.array(features), np.array(labels)
 
 
-
-
 # SVM-Modell mit den angegebenen Parametern erstellen
 def create_svm_model():
     
@@ -117,7 +121,7 @@ def train_svm_model(path):
     return svm_model,scaler
 
 # Classification report and confusion matrix
-def confusion_matrix(y_test,y_pred):
+def plot_confusion_matrix(y_test,y_pred):
     print("Classification Report:")
     print(classification_report(y_test, y_pred))
     cm = confusion_matrix(y_test, y_pred)
@@ -210,18 +214,7 @@ if __name__ == "__main__":
     audio_path = r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen"
     model ,scaler= train_svm_model(audio_path)
    
-    # test mit Segmentierte Audio Dateien
-   
-    mp3_file = os.path.join(os.path.dirname(__file__), "..", "C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Felix_1_1.wav")
-    process_audio_file(mp3_file, model,scaler)
-    """mp3_file = os.path.join(os.path.dirname(__file__), "..", "C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Felix_15_2.wav")
-    process_mp3_file(mp3_file, model)
-    mp3_file = os.path.join(os.path.dirname(__file__), "..", "C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Linelle_7_1.wav")
-    process_mp3_file(mp3_file, model)
-    mp3_file = os.path.join(os.path.dirname(__file__), "..", "C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Linelle_10_2.wav")
-    process_mp3_file(mp3_file, model)
-    mp3_file = os.path.join(os.path.dirname(__file__), "..", "C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\LinelleNew14.wav")
-    process_mp3_file(mp3_file, model)"""
+    
     
     test_files=[
         r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Felix_1_1.wav",
@@ -233,4 +226,7 @@ if __name__ == "__main__":
      
     for file in test_files:
         predict_speaker(model, file, scaler)
+        # test mit Segmentierte Audio Dateien
+        process_audio_file(file, model,scaler)
+        print()
 
