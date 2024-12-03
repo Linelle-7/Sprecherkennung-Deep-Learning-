@@ -160,8 +160,8 @@ def process_mp3_file(file_path, model):
     # MP3 in Audio-Daten und Samplingrate umwandeln
     audio, sr = librosa.load(file_path, sr=16000)
     
-    # Segmentieren der Audiodaten in halbe Sekunden
-    segment_length = sr // 2  # 0.5 Sekunden pro Segment
+    # Segmentieren der Audiodaten in 0.1 Sekunden Abschnitte
+    segment_length = int(sr * 0.1)  # 0.1 Sekunden pro Segment
     num_segments = len(audio) // segment_length
 
     print(f"Datei analysieren: {file_path}")
@@ -171,91 +171,59 @@ def process_mp3_file(file_path, model):
     previous_speaker = None
     confirmed_speaker = None
     segment_start_time = 0  # Beginn des aktuellen Sprechersegments
-    buffer = []  # Buffer für vorläufig erkannte Sprecher
     results = []  # Ergebnisse sammeln
 
-    for i in range(num_segments):
-        # Extrahieren des aktuellen Segments
-        start = i * segment_length
-        end = start + segment_length
-        segment = audio[start:end]
+    for i in range(0, num_segments, 10):  # Alle 1 Sekunde (10x 0.1s Abschnitte)
+        # Die 10 0.1s Abschnitte für die aktuelle Sekunde zusammenfassen
+        speaker_counts = {0: 0, 1: 0, 2: 0}  # Zähler für die Stimmen: Felix (0), Linelle (1), Julia (2)
+        
+        # Verarbeiten der 10 Abschnitte pro Sekunde
+        for j in range(i, i + 10):
+            start = j * segment_length
+            end = start + segment_length
+            segment = audio[start:end]
 
-        # MFCCs extrahieren
-        mfccs = extract_mfccs(segment, sr)
-        mfccs = np.expand_dims(mfccs, axis=0)  # Für das Modell passend vorbereiten
+            # MFCCs extrahieren
+            mfccs = extract_mfccs(segment, sr)
+            mfccs = np.expand_dims(mfccs, axis=0)  # Für das Modell passend vorbereiten
 
-        # Vorhersage
-        prediction = model.predict(mfccs, verbose=0)
-        predicted_label = np.argmax(prediction, axis=1)[0]
+            # Vorhersage
+            prediction = model.predict(mfccs, verbose=0)
+            predicted_label = np.argmax(prediction, axis=1)[0]
 
-        # Sprecher basierend auf der Vorhersage bestimmen
-        if predicted_label == 0:
+            # Stimmenzählung
+            speaker_counts[predicted_label] += 1
+
+        # Am häufigsten erkannte Stimme für diese Sekunde
+        most_common_speaker = max(speaker_counts, key=speaker_counts.get)
+
+        # Bestimmen des Sprechers anhand der Häufigkeit der Erkennung
+        if most_common_speaker == 0:
             speaker = "Felix"
-        elif predicted_label == 1:
+        elif most_common_speaker == 1:
             speaker = "Linelle"
-        elif predicted_label == 2:
+        elif most_common_speaker == 2:
             speaker = "Julia"
         else:
             speaker = "Unbekannt"
 
-        # Sprecher in den Buffer speichern
-        buffer.append(speaker)
-        if len(buffer) > 2:  # Buffer auf zwei Elemente beschränken
-            buffer.pop(0)
+        # Sprecherwechsel prüfen
+        if speaker != confirmed_speaker:
+            # Wenn sich der Sprecher geändert hat, das Segment speichern
+            if confirmed_speaker is not None:
+                segment_end_time = (i + 10) * 0.1  # Ende des vorherigen Sprechersegments
+                results.append((confirmed_speaker, segment_start_time, segment_end_time))
+                print(f"{confirmed_speaker}: {segment_start_time:.2f}s - {segment_end_time:.2f}s")
 
-        # Sprecherwechsel prüfen, wenn der Buffer stabil ist
-        if len(buffer) == 2 and buffer[0] == buffer[1]:
-            current_speaker = buffer[0]
-
-            if current_speaker != confirmed_speaker:
-                # Ende des vorherigen Sprechersegments
-                if confirmed_speaker is not None:
-                    segment_end_time = i * 0.5
-                    results.append((confirmed_speaker, segment_start_time, segment_end_time))
-                    print(f"{confirmed_speaker}: {segment_start_time:.2f}s - {segment_end_time:.2f}s")
-
-                # Neuer Sprecher
-                confirmed_speaker = current_speaker
-                segment_start_time = i * 0.5
+            # Neuen Sprecher bestätigen
+            confirmed_speaker = speaker
+            segment_start_time = i * 0.1  # Beginn des neuen Sprechersegments
 
     # Restsegment (letzter Sprecherabschnitt)
     if confirmed_speaker is not None:
-        segment_end_time = num_segments * 0.5
+        segment_end_time = num_segments * 0.1  # Ende des letzten Segments
         results.append((confirmed_speaker, segment_start_time, segment_end_time))
         print(f"{confirmed_speaker}: {segment_start_time:.2f}s - {segment_end_time:.2f}s")
-
-    # Prüfen, ob es einen Restabschnitt gibt
-    remaining = len(audio) % segment_length
-    if remaining > 0:
-        start = num_segments * segment_length
-        segment = audio[start:]
-        
-        # MFCCs extrahieren
-        mfccs = extract_mfccs(segment, sr)
-        mfccs = np.expand_dims(mfccs, axis=0)
-
-        # Vorhersage
-        prediction = model.predict(mfccs, verbose=0)
-        predicted_label = np.argmax(prediction, axis=1)[0]
-
-        if predicted_label == 0:
-            speaker = "Felix"
-        elif predicted_label == 1:
-            speaker = "Linelle"
-        elif predicted_label == 2:
-            speaker = "Julia"
-        else:
-            speaker = "Unbekannt"
-
-        if speaker == confirmed_speaker:
-            # Verlängere das letzte Segment
-            results[-1] = (confirmed_speaker, results[-1][1], (num_segments * 0.5 + remaining / sr))
-        else:
-            # Neues Segment
-            start_time = num_segments * 0.5
-            end_time = start_time + remaining / sr
-            results.append((speaker, start_time, end_time))
-            print(f"{speaker}: {start_time:.2f}s - {end_time:.2f}s")
 
     return results
 
