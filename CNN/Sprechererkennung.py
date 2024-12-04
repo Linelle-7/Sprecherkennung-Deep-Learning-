@@ -243,5 +243,7 @@ if __name__ == "__main__":
     process_mp3_file(mp3_file, model)
     mp3_file = os.path.join(os.path.dirname(__file__), "..", "Stimmen\LinelleNew14.wav")
     process_mp3_file(mp3_file, model)
+    mp3_file = os.path.join(os.path.dirname(__file__), "..", "Stimmen_NT\Linelle_NT.wav")
+    process_mp3_file(mp3_file, model)
     # audio_buffer = recognize_speech(model) # Aufnahme und Spracherkennung in Echtzeit
     # audio_to_text(audio_buffer) # Methode zur Übersetzung der Audio Dateien in Text.
