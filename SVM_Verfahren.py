@@ -170,10 +170,10 @@ def train_svm_model(path):
     X_test = scaler.transform(X_test)
     
     # Hyperparameter-Tuning und Modelltraining
-    best_model = hyperparameter_tuning_GridSsearchCV(X_train, y_train)
+    #best_model = hyperparameter_tuning_GridSsearchCV(X_train, y_train)
     
     # SVM-Modell mit RandomizedSearchCV trainieren
-    #best_model = randomized_search_svm(X_train, y_train)
+    best_model = randomized_search_svm(X_train, y_train)
     
     best_model.fit(X_train, y_train)
     accuracy = best_model.score(X_test, y_test)
