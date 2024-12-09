@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import os
 import sounddevice as sd
+from collections import Counter
 import joblib
 from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
@@ -15,6 +16,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix, precision_score, recall_score, f1_score, accuracy_score, roc_curve, auc, precision_recall_curve, roc_auc_score
 from sklearn.datasets import load_iris
 from scipy.stats import uniform
+from scipy.ndimage import uniform_filter1d
 
 # Optional: for parallel processing
 from multiprocessing import Pool
@@ -467,81 +469,6 @@ def process_audio_file3(file_path, model, scaler):
 
     return transcript
 
-def process_mp3_file(file_path, model,scaler):
-    if not os.path.isfile(file_path):
-        print("Die angegebene Datei existiert nicht.")
-        return
-
-    # MP3 in Audio-Daten und Samplingrate umwandeln
-    audio, sr = librosa.load(file_path, sr=16000)
-    
-    # Segmentieren der Audiodaten in 0.1 Sekunden Abschnitte
-    segment_length = int(sr * 0.1)  # 0.1 Sekunden pro Segment
-    num_segments = len(audio) // segment_length
-
-    print(f"Datei analysieren: {file_path}")
-    print(f"Gesamtdauer: {len(audio) / sr:.2f} Sekunden, {num_segments} Segmente werden verarbeitet.")
-
-    current_speaker = None
-    previous_speaker = None
-    confirmed_speaker = None
-    segment_start_time = 0  # Beginn des aktuellen Sprechersegments
-    results = []  # Ergebnisse sammeln
-
-    for i in range(0, num_segments, 10):  # Alle 1 Sekunde (10x 0.1s Abschnitte)
-        # Die 10 0.1s Abschnitte für die aktuelle Sekunde zusammenfassen
-        speaker_counts = {0: 0, 1: 0, 2: 0}  # Zähler für die Stimmen: Felix (0), Linelle (1), Julia (2)
-        
-        # Verarbeiten der 10 Abschnitte pro Sekunde
-        for j in range(i, i + 10):
-            start = j * segment_length
-            end = start + segment_length
-            segment = audio[start:end]
-
-            # MFCCs extrahieren
-            mfccs = extract_features(segment, sr)
-            mfccs = scaler.transform([mfccs])  # Für das Modell passend vorbereiten
-
-            # Vorhersage
-            prediction = model.predict(mfccs)[0]
-            predicted_label = np.argmax(prediction, axis=0)
-
-            # Stimmenzählung
-            speaker_counts[predicted_label] += 1
-
-        # Am häufigsten erkannte Stimme für diese Sekunde
-        most_common_speaker = max(speaker_counts, key=speaker_counts.get)
-
-        # Bestimmen des Sprechers anhand der Häufigkeit der Erkennung
-        if most_common_speaker == 0:
-            speaker = "Felix"
-        elif most_common_speaker == 1:
-            speaker = "Linelle"
-        elif most_common_speaker == 2:
-            speaker = "Julia"
-        else:
-            speaker = "Unbekannt"
-
-        # Sprecherwechsel prüfen
-        if speaker != confirmed_speaker:
-            # Wenn sich der Sprecher geändert hat, das Segment speichern
-            if confirmed_speaker is not None:
-                segment_end_time = (i + 10) * 0.1  # Ende des vorherigen Sprechersegments
-                results.append((confirmed_speaker, segment_start_time, segment_end_time))
-                print(f"{confirmed_speaker}: {segment_start_time:.2f}s - {segment_end_time:.2f}s")
-
-            # Neuen Sprecher bestätigen
-            confirmed_speaker = speaker
-            segment_start_time = i * 0.1  # Beginn des neuen Sprechersegments
-
-    # Restsegment (letzter Sprecherabschnitt)
-    if confirmed_speaker is not None:
-        segment_end_time = num_segments * 0.1  # Ende des letzten Segments
-        results.append((confirmed_speaker, segment_start_time, segment_end_time))
-        print(f"{confirmed_speaker}: {segment_start_time:.2f}s - {segment_end_time:.2f}s")
-
-    return results
-
 def record_audio(duration, sr=16000, device_id=None):
     """
     Nimmt Audio auf. Wenn 'device_id' angegeben wird, wird dieses Mikrofon verwendet,
@@ -612,8 +539,140 @@ def continuous_recognition(model,scaler,duration=5, sr=16000):
     except KeyboardInterrupt:
         print("Echtzeit-Erkennung beendet.")
 
+def speaker_recognition_with_smoothing(audio_file, svm_model, scaler, x_neighbors=2, window_size=5):
+    """
+    Methode zur Sprechererkennung mit Glättung unter Berücksichtigung von Vorgängern und Nachfolgern.
+    
+    :param x_neighbors: Anzahl der Vorgänger und Nachfolger zur Glättung
+    :param window_size: Größe des Glättungsfensters
+    :return: Liste der geglätteten Sprechervorhersagen
+    """
+    audio, sr = librosa.load(audio_file, sr=16000)
+    
+    def split_audio_into_segments(audio, segment_duration=0.1, sr=16000):
+        """
+        Teilt das Audio in 0,1 Sekunden lange Segmente.
+        
+        :param audio: Das Audio als numpy Array
+        :param segment_duration: Dauer eines Segments in Sekunden
+        :param sr: Sampling-Rate des Audio
+        :return: Liste der Audio-Segmente
+        """
+        segment_length = int(segment_duration * sr)
+        segments = [audio[i:i + segment_length] for i in range(0, len(audio), segment_length)]
+        
+        # Null-Elemente (Stille) am Anfang und Ende hinzufügen
+        silence = np.zeros(segment_length)
+        segments = [silence] + segments + [silence]
+        
+        return segments
 
 
+    
+    segments = split_audio_into_segments(audio, segment_duration=0.1, sr=sr)
+      # Merkmale aus den Segmenten extrahieren
+    features = [extract_features(segment, sr) for segment in segments]
+    
+    # Skalieren der Merkmale
+    scaled_features = scaler.transform(features)
+    
+    # Vorhersagen mit SVM
+    predictions = svm_model.predict(scaled_features)
+    
+    # Glättung der Vorhersagen
+    smoothed_predictions = []
+    for i in range(len(predictions)):
+        # Holen der benachbarten Vorhersagen
+        start = max(0, i - x_neighbors)
+        end = min(len(predictions), i + x_neighbors + 1)
+        neighbors = predictions[start:end]
+        
+        # Glättung mittels Mehrheit der Nachbarn
+        smoothed_predictions.append(np.bincount(neighbors).argmax())
+    
+    # Optional: Fenster-Glättung (Moving Average) auf die gesamten Vorhersagen anwenden
+    smoothed_predictions = uniform_filter1d(smoothed_predictions, size=window_size, mode='nearest')
+    
+    
+  # Sprecher-Intervalle ermitteln
+    speaker_intervals = []
+    current_speaker = smoothed_predictions[0]
+    start_time = 0.0
+
+    for i in range(1, len(smoothed_predictions)):
+        if smoothed_predictions[i] != current_speaker:
+            # Ende des aktuellen Intervalls
+            end_time = i * 0.1  # jedes Segment hat eine Dauer von 0,1 Sekunden
+            speaker_intervals.append((current_speaker, start_time, end_time))
+            
+            # Neues Intervall starten
+            current_speaker = smoothed_predictions[i]
+            start_time = i * 0.1  # Neues Intervall beginnt hier
+
+    # Das letzte Intervall hinzufügen
+    end_time = len(smoothed_predictions) * 0.1
+    speaker_intervals.append((current_speaker, start_time, end_time))
+
+    # Ausgabe der Sprecher-Intervalle
+    for speaker, start, end in speaker_intervals:
+        recognized=["Felix", "Linelle", "unbekannt"][speaker]
+        print(f"Sprecher {recognized}: {start:.2f}s - {end:.2f}s")
+    
+    return smoothed_predictions
+
+# Echzeiterkennung mit Callback
+def real_time_recognition(model,scaler):
+    prediction =None #Speichert erkannte Sprecher während Programmsdurchlauf
+    print("Echzeiterkennung fängt gleich an ...")
+    # Predict speaker
+    def predict_speaker(model, audio, scaler):
+        try:
+            sr=16000
+            features = extract_features(audio, sr)
+            print(f"Extrahierte Eigenschaften für Vorhersage: {features}") 
+            features = scaler.transform([features])
+            #print(f"Extrahierte Eigenschaften für Vorhersage nach Scaler Transform: {features}") 
+            prediction = model.predict(features)[0]
+            speaker = ["Felix", "Linelle", "unbekannt"][prediction]
+            #print(f"File: {audio}, Predicted Speaker: {speaker}")
+            return speaker
+        except Exception as e:
+            print(f"Fehler während das Vorhersage des Dateis  {audio}: {e}")
+            return "Fehler"
+    
+    def callback(indata, frames, time, status):
+        nonlocal prediction
+        if status:
+            print(status)
+        
+        # Überprüfen, ob das Eingangsarray signifikant ist
+        if np.max(np.abs(indata)) < 0.02:  # Schwellenwert für Stille
+            prediction = "Unbekannt"
+            return
+        
+        # Engabe in Mono unwandeln
+        audio = indata[:, 0]
+        # Vorhersage
+        try:
+            prediction =predict_speaker(model,audio, scaler)
+            # if prediction == "unknown":
+            #     print("erkannt : unbekannt ")
+            # else:
+            #     print(f"erkannt : {prediction}")
+        except Exception as e:
+            print(f"Erreur : {e}")
+
+    with sd.InputStream(callback=callback, channels=1, samplerate=16000, blocksize=16000):
+       print("Jetzt  können sie sprechen...")
+       try:
+           while True:
+               if prediction is not None:
+                   print(f"erkannt : {prediction}")
+                   prediction=None
+               time.sleep(.5)  # Wartezeit
+        
+       except KeyboardInterrupt:
+           print("Erkennung beendet.")
 # Hauptprogramm
 if __name__ == "__main__":
     
@@ -634,10 +693,16 @@ if __name__ == "__main__":
     for file in test_files:
         predict_speaker(model, file, scaler)
         # test mit Segmentierte Audio Dateien
-        process_audio_file3(file, model,scaler)
+        #process_audio_file3(file, model,scaler)
+        
+        # Sprechererkennung mit Glättung durchführen
+        speaker_recognition_with_smoothing(file,model, scaler, x_neighbors=2, window_size=5)
+
         
         #process_mp3_file(file, model,scaler)
         print()
     
-    print(" ***Continuous Recognition startet jetzt.")
-    continuous_recognition(model,scaler, duration=5,sr=1600)
+    # print(" ***Continuous Recognition startet jetzt.")
+    # #continuous_recognition(model,scaler, duration=5,sr=1600)
+    
+    # real_time_recognition(model,scaler)
