@@ -41,13 +41,11 @@ def load_training_data(path):
         mfccs = extract_mfccs(audio, sr)  # Feste Länge der MFCCs
         X.append(mfccs)
 
-        # Labels setzen (0 für Felix, 1 für Linelle, 2 für Julia)
+        # Labels setzen (0 für Felix, 1 für Linelle)
         if file.lower().startswith("felix"):  
             y.append(0) 
         elif file.lower().startswith("linelle"):  
             y.append(1)
-        elif file.lower().startswith("julia"):  
-            y.append(2)
 
     X = np.array(X)  # In ein 3D-Array umwandeln für CNN (samples, features, timesteps)
     y = np.array(y)
@@ -65,7 +63,7 @@ def create_cnn_model(input_shape):
     model.add(MaxPooling1D(pool_size=2))
     model.add(Flatten())
     model.add(Dense(64, activation='relu'))
-    model.add(Dense(3, activation='softmax'))  # Drei Klassen: Felix, Linelle, Julia
+    model.add(Dense(2, activation='softmax'))  # Drei Klassen: Felix, Linelle
     
     model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
     
@@ -111,8 +109,6 @@ def recognize_speech(model):
             recognized = "Felix"
         elif predicted_label[0] == 1:
             recognized = "Linelle"
-        elif predicted_label[0] == 2:
-            recognized = "Julia"
         else:
             recognized = "Unbekannt"
 
@@ -152,80 +148,83 @@ def audio_to_text(audio_buffer):
         except sr.RequestError as e:
             print(f"Fehler bei der Anfrage an Sphynx Recognition API: {e}")
 
-def process_mp3_file(file_path, model):
-    if not os.path.isfile(file_path):
-        print("Die angegebene Datei existiert nicht.")
-        return
+def segment_and_analyze_with_output(audio_file, model, segment_length=0.1, window_size=3, sr=16000):
+    # Zuordnung der Labels zu Namen
+    label_to_name = {0: "Felix", 1: "Linelle"}
 
-    # MP3 in Audio-Daten und Samplingrate umwandeln
-    audio, sr = librosa.load(file_path, sr=16000)
+    if not os.path.isfile(audio_file):
+        raise FileNotFoundError(f"Die Datei {audio_file} existiert nicht.")
+
+    # Audio laden
+    audio, _ = librosa.load(audio_file, sr=sr)
+    segment_samples = int(segment_length * sr)
+    num_segments = len(audio) // segment_samples
+
+    # Ausgabe des Namens ohne Dateipfad der Audio-Datei
+    print(f"\nAnalyse von {os.path.basename(audio_file)}:")
+
+    # Ausgabe der Segement- und Fenstergröße
+    print(f"Segmentlänge: {segment_length}s, Fenstergröße: {window_size}")
     
-    # Segmentieren der Audiodaten in 0.1 Sekunden Abschnitte
-    segment_length = int(sr * 0.1)  # 0.1 Sekunden pro Segment
-    num_segments = len(audio) // segment_length
+    # Ursprüngliche Ergebnisse
+    original_results = []
 
-    print(f"Datei analysieren: {file_path}")
-    print(f"Gesamtdauer: {len(audio) / sr:.2f} Sekunden, {num_segments} Segmente werden verarbeitet.")
+    # Segmentweise Analyse
+    for i in range(num_segments):
+        start = i * segment_samples
+        end = start + segment_samples
+        segment = audio[start:end]
 
-    current_speaker = None
-    previous_speaker = None
-    confirmed_speaker = None
-    segment_start_time = 0  # Beginn des aktuellen Sprechersegments
-    results = []  # Ergebnisse sammeln
+        # MFCCs extrahieren und Vorhersage durchführen
+        mfccs = extract_mfccs(segment, sr)
+        mfccs = np.expand_dims(mfccs, axis=0)
+        prediction = model.predict(mfccs, verbose=0)
+        predicted_label = np.argmax(prediction, axis=1)[0]
 
-    for i in range(0, num_segments, 10):  # Alle 1 Sekunde (10x 0.1s Abschnitte)
-        # Die 10 0.1s Abschnitte für die aktuelle Sekunde zusammenfassen
-        speaker_counts = {0: 0, 1: 0, 2: 0}  # Zähler für die Stimmen: Felix (0), Linelle (1), Julia (2)
-        
-        # Verarbeiten der 10 Abschnitte pro Sekunde
-        for j in range(i, i + 10):
-            start = j * segment_length
-            end = start + segment_length
-            segment = audio[start:end]
+        original_results.append(predicted_label)
 
-            # MFCCs extrahieren
-            mfccs = extract_mfccs(segment, sr)
-            mfccs = np.expand_dims(mfccs, axis=0)  # Für das Modell passend vorbereiten
+    # Padding für Bereinigung
+    padding = (window_size - 1) // 2
+    padded_results = [None] * padding + original_results + [None] * padding
 
-            # Vorhersage
-            prediction = model.predict(mfccs, verbose=0)
-            predicted_label = np.argmax(prediction, axis=1)[0]
-
-            # Stimmenzählung
-            speaker_counts[predicted_label] += 1
-
-        # Am häufigsten erkannte Stimme für diese Sekunde
-        most_common_speaker = max(speaker_counts, key=speaker_counts.get)
-
-        # Bestimmen des Sprechers anhand der Häufigkeit der Erkennung
-        if most_common_speaker == 0:
-            speaker = "Felix"
-        elif most_common_speaker == 1:
-            speaker = "Linelle"
-        elif most_common_speaker == 2:
-            speaker = "Julia"
+    # Bereinigte Ergebnisse durch Fensterabstimmung
+    cleaned_results = []
+    for i in range(len(original_results)):
+        window = padded_results[i:i + window_size]
+        window = [label for label in window if label is not None]
+        if window:
+            most_common = max(set(window), key=window.count)
+            cleaned_results.append(most_common)
         else:
-            speaker = "Unbekannt"
+            cleaned_results.append(None)
 
-        # Sprecherwechsel prüfen
-        if speaker != confirmed_speaker:
-            # Wenn sich der Sprecher geändert hat, das Segment speichern
-            if confirmed_speaker is not None:
-                segment_end_time = (i + 10) * 0.1  # Ende des vorherigen Sprechersegments
-                results.append((confirmed_speaker, segment_start_time, segment_end_time))
-                print(f"{confirmed_speaker}: {segment_start_time:.2f}s - {segment_end_time:.2f}s")
+    # Sprecherwechsel analysieren und ausgeben
+    current_speaker = None
+    segment_start_time = 0
 
-            # Neuen Sprecher bestätigen
-            confirmed_speaker = speaker
-            segment_start_time = i * 0.1  # Beginn des neuen Sprechersegments
+    def format_time(seconds):
+        """Hilfsfunktion, um Sekunden in mm:ss:msms-Format zu formatieren."""
+        m = int(seconds // 60)
+        s = int(seconds % 60)
+        ms = int((seconds % 1) * 1000)
+        return f"{m:02}:{s:02}:{ms:03}"
 
-    # Restsegment (letzter Sprecherabschnitt)
-    if confirmed_speaker is not None:
-        segment_end_time = num_segments * 0.1  # Ende des letzten Segments
-        results.append((confirmed_speaker, segment_start_time, segment_end_time))
-        print(f"{confirmed_speaker}: {segment_start_time:.2f}s - {segment_end_time:.2f}s")
+    for i, speaker in enumerate(cleaned_results):
+        speaker_name = label_to_name.get(speaker, "Unbekannt")
+        if speaker_name != current_speaker:
+            if current_speaker is not None:
+                end_time = i * segment_length
+                print(f"[{format_time(segment_start_time)} - {format_time(end_time)}] {current_speaker}")
 
-    return results
+            current_speaker = speaker_name
+            segment_start_time = i * segment_length
+
+    # Ausgabe des letzten Segments
+    if current_speaker is not None:
+        end_time = num_segments * segment_length
+        print(f"[{format_time(segment_start_time)} - {format_time(end_time)}] {current_speaker}")
+
+
 
 # Hauptprogramm
 if __name__ == "__main__":
@@ -234,14 +233,14 @@ if __name__ == "__main__":
     
     # MP3-Datei verarbeiten
     mp3_file = os.path.join(os.path.dirname(__file__), "..", "Stimmen\Felix_1_1.wav")
-    process_mp3_file(mp3_file, model)
+    segment_and_analyze_with_output(mp3_file, model, 0.5)
     mp3_file = os.path.join(os.path.dirname(__file__), "..", "Stimmen\Felix_15_2.wav")
-    process_mp3_file(mp3_file, model)
+    segment_and_analyze_with_output(mp3_file, model, 0.5)
     mp3_file = os.path.join(os.path.dirname(__file__), "..", "Stimmen\Linelle_7_1.wav")
-    process_mp3_file(mp3_file, model)
+    segment_and_analyze_with_output(mp3_file, model, 0.5)
     mp3_file = os.path.join(os.path.dirname(__file__), "..", "Stimmen\Linelle_10_2.wav")
-    process_mp3_file(mp3_file, model)
+    segment_and_analyze_with_output(mp3_file, model, 0.5)
     mp3_file = os.path.join(os.path.dirname(__file__), "..", "Stimmen\LinelleNew14.wav")
-    process_mp3_file(mp3_file, model)
+    segment_and_analyze_with_output(mp3_file, model, 0.5)
     # audio_buffer = recognize_speech(model) # Aufnahme und Spracherkennung in Echtzeit
     # audio_to_text(audio_buffer) # Methode zur Übersetzung der Audio Dateien in Text.
