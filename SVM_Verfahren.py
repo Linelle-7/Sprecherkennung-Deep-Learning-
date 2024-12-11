@@ -184,8 +184,6 @@ def train_svm_model(path):
     y_pred = best_model.predict(X_test)
     plot_confusion_matrix(y_test, y_pred)
     
-    y_pred = best_model.predict(X_test)
-    
     # Evaluieren des Modells
     evaluate_model(y_test, y_pred)
     
@@ -207,6 +205,7 @@ def evaluate_model(y_test, y_pred):
     """
     Berechnet mehrere Metriken zur Modellbewertung und gibt sie aus.
     """
+    print(classification_report(y_test, y_pred))
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred, average='weighted')
     recall = recall_score(y_test, y_pred, average='weighted')
@@ -227,8 +226,8 @@ def plot_roc_curve(y_test, y_pred_prob):
     plt.figure(figsize=(8, 6))
     plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
     plt.plot([0, 1], [0, 1], color='gray', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
+    plt.xlim([-0.05, 1.05])
+    plt.ylim([-0.05, 1.05])
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
     plt.title('Receiver Operating Characteristic Curve')
@@ -616,6 +615,7 @@ def speaker_recognition_with_smoothing(audio_file, svm_model, scaler, x_neighbor
     # Ausgabe der Sprecher-Intervalle
     for speaker, start, end in speaker_intervals:
         recognized=["Felix", "Linelle", "unbekannt"][speaker]
+        print(f"\nAnalyse von {os.path.basename(audio_file)}:")
         print(f"Sprecher {recognized}: {start:.2f}s - {end:.2f}s")
     
     return smoothed_predictions
@@ -673,6 +673,85 @@ def real_time_recognition(model,scaler):
         
        except KeyboardInterrupt:
            print("Erkennung beendet.")
+
+def segment_and_analyze_with_output(audio_file, model, scaler,segment_length=0.1, window_size=3, sr=16000):
+    # Zuordnung der Labels zu Namen
+    label_to_name = {0: "Felix", 1: "Linelle"}
+
+    if not os.path.isfile(audio_file):
+        raise FileNotFoundError(f"Die Datei {audio_file} existiert nicht.")
+
+    # Audio laden
+    audio, _ = librosa.load(audio_file, sr=sr)
+    segment_samples = int(segment_length * sr)
+    num_segments = len(audio) // segment_samples
+
+    # Ausgabe des Namens ohne Dateipfad der Audio-Datei
+    print(f"\nAnalyse von {os.path.basename(audio_file)}:")
+
+    # Ausgabe der Segement- und Fenstergröße
+    print(f"Segmentlänge: {segment_length}s, Fenstergröße: {window_size}")
+    
+    # Ursprüngliche Ergebnisse
+    original_results = []
+
+    # Segmentweise Analyse
+    for i in range(num_segments):
+        start = i * segment_samples
+        end = start + segment_samples
+        segment = audio[start:end]
+
+        # MFCCs extrahieren und Vorhersage durchführen
+        mfccs = extract_features(segment, sr)
+        #mfccs = np.expand_dims(mfccs, axis=0)
+        mfccs=scaler.transform([mfccs])
+        prediction = model.predict(mfccs)[0]
+        #predicted_label = np.argmax(prediction, axis=1)[0]
+        predicted_label=prediction
+
+        original_results.append(predicted_label)
+
+    # Padding für Bereinigung
+    padding = (window_size - 1) // 2
+    padded_results = [None] * padding + original_results + [None] * padding
+
+    # Bereinigte Ergebnisse durch Fensterabstimmung
+    cleaned_results = []
+    for i in range(len(original_results)):
+        window = padded_results[i:i + window_size]
+        window = [label for label in window if label is not None]
+        if window:
+            most_common = max(set(window), key=window.count)
+            cleaned_results.append(most_common)
+        else:
+            cleaned_results.append(None)
+
+    # Sprecherwechsel analysieren und ausgeben
+    current_speaker = None
+    segment_start_time = 0
+
+    def format_time(seconds):
+        """Hilfsfunktion, um Sekunden in mm:ss:msms-Format zu formatieren."""
+        m = int(seconds // 60)
+        s = int(seconds % 60)
+        ms = int((seconds % 1) * 1000)
+        return f"{m:02}:{s:02}:{ms:03}"
+
+    for i, speaker in enumerate(cleaned_results):
+        speaker_name = label_to_name.get(speaker, "Unbekannt")
+        if speaker_name != current_speaker:
+            if current_speaker is not None:
+                end_time = i * segment_length
+                print(f"[{format_time(segment_start_time)} - {format_time(end_time)}] {current_speaker}")
+
+            current_speaker = speaker_name
+            segment_start_time = i * segment_length
+
+    # Ausgabe des letzten Segments
+    if current_speaker is not None:
+        end_time = num_segments * segment_length
+        print(f"[{format_time(segment_start_time)} - {format_time(end_time)}] {current_speaker}") 
+
 # Hauptprogramm
 if __name__ == "__main__":
     
@@ -697,6 +776,7 @@ if __name__ == "__main__":
         
         # Sprechererkennung mit Glättung durchführen
         speaker_recognition_with_smoothing(file,model, scaler, x_neighbors=2, window_size=5)
+        #segment_and_analyze_with_output(file, model, scaler,segment_length=0.1, window_size=3, sr=16000)
 
         
         #process_mp3_file(file, model,scaler)
@@ -705,4 +785,4 @@ if __name__ == "__main__":
     # print(" ***Continuous Recognition startet jetzt.")
     # #continuous_recognition(model,scaler, duration=5,sr=1600)
     
-    # real_time_recognition(model,scaler)
+    #real_time_recognition(model,scaler)
