@@ -25,6 +25,9 @@ from multiprocessing import Pool
 import signal
 import time
 
+
+import speech_recognition as sr
+
 # Optional: for hyperparameter optimization
 #import optuna
 #import lightgbm as lgb
@@ -81,10 +84,10 @@ def process_file(file_path, label):
 def load_data(audio_folder_path):
     files = [os.path.join(audio_folder_path, file) for file in os.listdir(audio_folder_path) if file.endswith(".wav")]
     results = Parallel(n_jobs=-1)(delayed(process_file)(
-        file, 0 if "felix" in os.path.basename(file).lower() else 1 if "linelle" in os.path.basename(file).lower() else 2
+        file, 0 if "felix" in os.path.basename(file).lower() else 1 if "linelle" in os.path.basename(file).lower() else 2 if "Paul" in os.path.basename(file).lower() else 3
     ) for file in files)
     
-    features, labels = [], []
+    features, labels = [], [],
     for f, l in results:
         features.extend(f)
         labels.extend(l)
@@ -128,10 +131,11 @@ def randomized_search_svm(X_train, y_train, n_iter=50, random_state=42):
         'C': uniform(0.1, 100),  # Von 0.1 bis 100
         'kernel': ['linear', 'rbf', 'poly'],  # Unterschiedliche Kernel , 'sigmoid'
         'gamma': ['scale', 'auto', 0.1, 1e-2, 'scale'],  # Gamma-Werte
-        'degree': [1,2, 3, 4, 5],  # Grad für 'poly' Kernel
+        'degree': [1,2, 3, 4, 5],  # Grad für 'poly' Kerne
+        'probability': [True,False]
     }
     # Erstelle das SVM-Modell
-    svm_model = SVC(probability=True, class_weight='balanced')
+    svm_model = SVC( class_weight='balanced')
     
     # RandomizedSearchCV mit Cross-Validation
     randomized_search = RandomizedSearchCV(svm_model, param_distributions=param_dist, 
@@ -184,15 +188,13 @@ def train_svm_model(path):
     y_pred = best_model.predict(X_test)
     plot_confusion_matrix(y_test, y_pred)
     
-    y_pred = best_model.predict(X_test)
-    
     # Evaluieren des Modells
     evaluate_model(y_test, y_pred)
     
-    y_pred_prob = best_model.predict_proba(X_test)[:, 1]  # Wahrscheinlichkeit für die positive Klasse
-    plot_roc_curve(y_test, y_pred_prob) #ROC-KURVE
+    #y_pred_prob = best_model.predict_proba(X_test)[:, 1]  # Wahrscheinlichkeit für die positive Klasse
+    #plot_roc_curve(y_test, y_pred_prob) #ROC-KURVE
     
-    plot_precision_recall_curve(y_test, y_pred_prob)
+    #plot_precision_recall_curve(y_test, y_pred_prob)
     
     plot_learning_curve(best_model, X_train, y_train) #plot der learning Kurve
     
@@ -207,17 +209,18 @@ def evaluate_model(y_test, y_pred):
     """
     Berechnet mehrere Metriken zur Modellbewertung und gibt sie aus.
     """
+    print(classification_report(y_test, y_pred))
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred, average='weighted')
     recall = recall_score(y_test, y_pred, average='weighted')
     f1 = f1_score(y_test, y_pred, average='weighted')
-    roc_auc = roc_auc_score(y_test, y_pred, multi_class='ovr')
+    #roc_auc = roc_auc_score(y_test, y_pred, multi_class='ovr')
 
     print(f"Genauigkeit: {accuracy * 100:.2f}%")
     print(f"Präzision (Weighted): {precision * 100:.2f}%")
     print(f"Recall (Weighted): {recall * 100:.2f}%")
     print(f"F1-Score (Weighted): {f1 * 100:.2f}%")
-    print(f"ROC AUC Score: {roc_auc:.2f}")
+    #print(f"ROC AUC Score: {roc_auc:.2f}")
     
 
 def plot_roc_curve(y_test, y_pred_prob):
@@ -227,8 +230,8 @@ def plot_roc_curve(y_test, y_pred_prob):
     plt.figure(figsize=(8, 6))
     plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
     plt.plot([0, 1], [0, 1], color='gray', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
+    plt.xlim([-0.05, 1.05])
+    plt.ylim([-0.05, 1.05])
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
     plt.title('Receiver Operating Characteristic Curve')
@@ -281,7 +284,7 @@ def plot_learning_curve(model, X_train, y_train):
 # Klassifikationsbericht und Confusion Matrix visualisieren
 def plot_confusion_matrix(y_test, y_pred):
     cm = confusion_matrix(y_test, y_pred)
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=["Felix", "Linelle", "Unknown"], yticklabels=["Felix", "Linelle", "Unknown"])
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=["Felix", "Linelle","Paul", "Unknown"], yticklabels=["Felix", "Linelle", "Paul", "Unknown"])
     plt.xlabel('Predicted')
     plt.ylabel('True')
     plt.title('Confusion Matrix')
@@ -297,7 +300,7 @@ def predict_speaker(model, audio_file, scaler):
         features = scaler.transform([features])
         print(f"Extrahierte Eigenschaften für Vorhersage nach Scaler Transform: {features}") 
         prediction = model.predict(features)[0]
-        speaker = ["Felix", "Linelle", "Unknown"][prediction]
+        speaker = ["Felix", "Linelle","Paul","Unknown"][prediction]
         print(f"File: {audio_file}, Predicted Speaker: {speaker}")
         return speaker
     except Exception as e:
@@ -316,7 +319,7 @@ def process_audio_file2(file_path, model, scaler):
             features = extract_features(audio_segment, sr)
             features = scaler.transform([features])
             prediction = model.predict(features)[0]
-            speaker = ["Felix", "Linelle", "Unknown"][prediction]
+            speaker = ["Felix", "Linelle","Paul", "Unknown"][prediction]
             return speaker
         except Exception as e:
             print(f"Fehler bei der Segmentvorhersage: {e}")
@@ -395,7 +398,7 @@ def process_audio_file3(file_path, model, scaler):
             features = extract_features(audio_segment, sr)
             features = scaler.transform([features])
             prediction = model.predict(features)[0]
-            speaker = ["Felix", "Linelle", "Unknown"][prediction]
+            speaker = ["Felix", "Linelle","Paul","Unknown"][prediction]
             return speaker
         except Exception as e:
             print(f"Fehler bei der Segmentvorhersage: {e}")
@@ -518,7 +521,7 @@ def continuous_recognition(model,scaler,duration=5, sr=16000):
             features = scaler.transform([rec_features])
             #print(f"Extrahierte Eigenschaften für Vorhersage nach Scaler Transform: {features}") 
             prediction = model.predict(features)[0]
-            speaker = ["Felix", "Linelle", "Unknown"][prediction]
+            speaker = ["Felix", "Linelle","Paul", "Unknown"][prediction]
             #print(f"File: {audio_file}, Predicted Speaker: {speaker}")
             return speaker
         except Exception as e:
@@ -615,7 +618,8 @@ def speaker_recognition_with_smoothing(audio_file, svm_model, scaler, x_neighbor
 
     # Ausgabe der Sprecher-Intervalle
     for speaker, start, end in speaker_intervals:
-        recognized=["Felix", "Linelle", "unbekannt"][speaker]
+        recognized=["Felix", "Linelle","Paul", "unbekannt"][speaker]
+        print(f"\nAnalyse von {os.path.basename(audio_file)}:")
         print(f"Sprecher {recognized}: {start:.2f}s - {end:.2f}s")
     
     return smoothed_predictions
@@ -633,7 +637,7 @@ def real_time_recognition(model,scaler):
             features = scaler.transform([features])
             #print(f"Extrahierte Eigenschaften für Vorhersage nach Scaler Transform: {features}") 
             prediction = model.predict(features)[0]
-            speaker = ["Felix", "Linelle", "unbekannt"][prediction]
+            speaker = ["Felix", "Linelle","Paul", "unbekannt"][prediction]
             #print(f"File: {audio}, Predicted Speaker: {speaker}")
             return speaker
         except Exception as e:
@@ -673,6 +677,142 @@ def real_time_recognition(model,scaler):
         
        except KeyboardInterrupt:
            print("Erkennung beendet.")
+
+def segment_and_analyze_with_output(audio_file, model, scaler,segment_length=0.1, window_size=3, sr=16000):
+    # Zuordnung der Labels zu Namen
+    label_to_name = {0: "Felix", 1: "Linelle", 2:"Paul"}
+
+    if not os.path.isfile(audio_file):
+        raise FileNotFoundError(f"Die Datei {audio_file} existiert nicht.")
+
+    # Audio laden
+    audio, _ = librosa.load(audio_file, sr=sr)
+    segment_samples = int(segment_length * sr)
+    num_segments = len(audio) // segment_samples
+
+    # Ausgabe des Namens ohne Dateipfad der Audio-Datei
+    print(f"\nAnalyse von {os.path.basename(audio_file)}:")
+
+    # Ausgabe der Segement- und Fenstergröße
+    print(f"Segmentlänge: {segment_length}s, Fenstergröße: {window_size}")
+    
+    # Ursprüngliche Ergebnisse
+    original_results = []
+
+    # Segmentweise Analyse
+    for i in range(num_segments):
+        start = i * segment_samples
+        end = start + segment_samples
+        segment = audio[start:end]
+
+        # MFCCs extrahieren und Vorhersage durchführen
+        mfccs = extract_features(segment, sr)
+        #mfccs = np.expand_dims(mfccs, axis=0)
+        mfccs=scaler.transform([mfccs])
+        prediction = model.predict(mfccs)[0]
+        #predicted_label = np.argmax(prediction, axis=1)[0]
+        predicted_label=prediction
+
+        original_results.append(predicted_label)
+
+    # Padding für Bereinigung
+    padding = (window_size - 1) // 2
+    padded_results = [None] * padding + original_results + [None] * padding
+
+    # Bereinigte Ergebnisse durch Fensterabstimmung
+    cleaned_results = []
+    for i in range(len(original_results)):
+        window = padded_results[i:i + window_size]
+        window = [label for label in window if label is not None]
+        if window:
+            most_common = max(set(window), key=window.count)
+            cleaned_results.append(most_common)
+        else:
+            cleaned_results.append(None)
+
+    # Sprecherwechsel analysieren und ausgeben
+    current_speaker = None
+    segment_start_time = 0
+
+    def format_time(seconds):
+        """Hilfsfunktion, um Sekunden in mm:ss:msms-Format zu formatieren."""
+        m = int(seconds // 60)
+        s = int(seconds % 60)
+        ms = int((seconds % 1) * 1000)
+        return f"{m:02}:{s:02}:{ms:03}"
+
+    for i, speaker in enumerate(cleaned_results):
+        speaker_name = label_to_name.get(speaker, "Unbekannt")
+        if speaker_name != current_speaker:
+            if current_speaker is not None:
+                end_time = i * segment_length
+                print(f"[{format_time(segment_start_time)} - {format_time(end_time)}] {current_speaker}")
+
+            current_speaker = speaker_name
+            segment_start_time = i * segment_length
+
+    # Ausgabe des letzten Segments
+    if current_speaker is not None:
+        end_time = num_segments * segment_length
+        print(f"[{format_time(segment_start_time)} - {format_time(end_time)}] {current_speaker}") 
+
+def audio_to_text1(audio_buffer):
+    recognizer = sr.Recognizer()
+
+    # Nehmen Sie die gespeicherten Audiodaten aus dem Buffer und konvertieren Sie sie
+    while not audio_buffer.empty():
+        audio_data = audio_buffer.get()
+        audio_np = np.frombuffer(audio_data, dtype=np.float32)
+
+        # Konvertieren Sie die numpy-Array-Audiodaten in AudioData für SpeechRecognition
+        audio_data = sr.AudioData(audio_np.tobytes(), sample_rate=16000, sample_width=audio_np.itemsize)
+
+        try:
+            # Erkennen Sie den Text
+            text = recognizer.recognize_sphynx(audio_data, language="de-DE")  # Für Deutsch
+            print("Erkannter Text:", text)
+        except sr.UnknownValueError:
+            print("Die Sprache konnte nicht erkannt werden.")
+        except sr.RequestError as e:
+            print(f"Fehler bei der Anfrage an Sphynx Recognition API: {e}")
+
+
+
+def audio_to_text(audio_path):
+    """
+    Konvertiert eine Audiodatei in Text.
+    
+    :param audio_path: Der Dateipfad zur Audiodatei
+    :return: Der erkannte Text (oder eine Fehlermeldung)
+    """
+    recognizer = sr.Recognizer()
+    
+    try:
+        # Laden der Audiodatei
+        with sr.AudioFile(audio_path) as source:
+            print("Lade Audio...")
+            audio_data = recognizer.record(source)  # Lesen der gesamten Audiodatei
+            
+        # Umwandeln von Audio zu Text
+        print("Erkenne Text...")
+        text = recognizer.recognize_sphinx(audio_data, language="de-DE")  # Deutsch
+        if text:
+            print("Erkannter Text:", text)
+        else:
+            print("Es wurde kein Text erkannt.")
+        return text
+    
+    except sr.UnknownValueError:
+        print("Die Sprache konnte nicht erkannt werden.")
+        return None
+    except sr.RequestError as e:
+        print(f"Fehler bei der Anfrage an die Speech Recognition API: {e}")
+        return None
+    except FileNotFoundError:
+        print(f"Die Datei {audio_path} wurde nicht gefunden.")
+        return None
+
+
 # Hauptprogramm
 if __name__ == "__main__":
     
@@ -680,23 +820,28 @@ if __name__ == "__main__":
     model ,scaler= train_svm_model(audio_path)
         
     test_files=[
+         r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Linelle_7_1.wav",
         r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Felix_1_1.wav",
         r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Felix_15_2.wav",
-        r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Linelle_7_1.wav",
         r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Linelle_10_2.wav",
         r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\LinelleNew14.wav",
         r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen_NT\Linelle_NT.wav",
         r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen_NT\Linelle_NT2.wav",
-        r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen_NT\Linelle_NT3.wav"
+        r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen_NT\Linelle_NT3.wav",
+        r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Paul_16-2.wav",
+        r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Paul_1-2.wav",
+        r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\Stimmen\Paul_15-2.wav"
     ]
      
     for file in test_files:
         predict_speaker(model, file, scaler)
         # test mit Segmentierte Audio Dateien
         #process_audio_file3(file, model,scaler)
+        audio_to_text(file)
         
         # Sprechererkennung mit Glättung durchführen
         speaker_recognition_with_smoothing(file,model, scaler, x_neighbors=2, window_size=5)
+        #segment_and_analyze_with_output(file, model, scaler,segment_length=0.1, window_size=3, sr=16000)
 
         
         #process_mp3_file(file, model,scaler)
@@ -705,4 +850,4 @@ if __name__ == "__main__":
     # print(" ***Continuous Recognition startet jetzt.")
     # #continuous_recognition(model,scaler, duration=5,sr=1600)
     
-    # real_time_recognition(model,scaler)
+    #real_time_recognition(model,scaler)
