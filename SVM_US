@@ -17,6 +17,7 @@ from sklearn.metrics import classification_report, confusion_matrix, precision_s
 from sklearn.datasets import load_iris
 from scipy.stats import uniform
 from scipy.ndimage import uniform_filter1d
+from hmmlearn import hmm
 
 # Optional: for parallel processing
 from multiprocessing import Pool
@@ -550,88 +551,6 @@ def continuous_recognition(model,scaler,duration=5, sr=16000):
     except KeyboardInterrupt:
         print("Echtzeit-Erkennung beendet.")
 
-def speaker_recognition_with_smoothing(audio_file, svm_model, scaler, x_neighbors=2, window_size=5):
-    """
-    Methode zur Sprechererkennung mit Glättung unter Berücksichtigung von Vorgängern und Nachfolgern.
-    
-    :param x_neighbors: Anzahl der Vorgänger und Nachfolger zur Glättung
-    :param window_size: Größe des Glättungsfensters
-    :return: Liste der geglätteten Sprechervorhersagen
-    """
-    audio, sr = librosa.load(audio_file, sr=16000)
-    
-    def split_audio_into_segments(audio, segment_duration=0.1, sr=16000):
-        """
-        Teilt das Audio in 0,1 Sekunden lange Segmente.
-        
-        :param audio: Das Audio als numpy Array
-        :param segment_duration: Dauer eines Segments in Sekunden
-        :param sr: Sampling-Rate des Audio
-        :return: Liste der Audio-Segmente
-        """
-        segment_length = int(segment_duration * sr)
-        segments = [audio[i:i + segment_length] for i in range(0, len(audio), segment_length)]
-        
-        # Null-Elemente (Stille) am Anfang und Ende hinzufügen
-        silence = np.zeros(segment_length)
-        segments = [silence] + segments + [silence]
-        
-        return segments
-
-
-    
-    segments = split_audio_into_segments(audio, segment_duration=0.1, sr=sr)
-      # Merkmale aus den Segmenten extrahieren
-    features = [extract_features(segment, sr) for segment in segments]
-    
-    # Skalieren der Merkmale
-    scaled_features = scaler.transform(features)
-    
-    # Vorhersagen mit SVM
-    predictions = svm_model.predict(scaled_features)
-    
-    # Glättung der Vorhersagen
-    smoothed_predictions = []
-    for i in range(len(predictions)):
-        # Holen der benachbarten Vorhersagen
-        start = max(0, i - x_neighbors)
-        end = min(len(predictions), i + x_neighbors + 1)
-        neighbors = predictions[start:end]
-        
-        # Glättung mittels Mehrheit der Nachbarn
-        smoothed_predictions.append(np.bincount(neighbors).argmax())
-    
-    # Optional: Fenster-Glättung (Moving Average) auf die gesamten Vorhersagen anwenden
-    smoothed_predictions = uniform_filter1d(smoothed_predictions, size=window_size, mode='nearest')
-    
-    
-  # Sprecher-Intervalle ermitteln
-    speaker_intervals = []
-    current_speaker = smoothed_predictions[0]
-    start_time = 0.0
-
-    for i in range(1, len(smoothed_predictions)):
-        if smoothed_predictions[i] != current_speaker:
-            # Ende des aktuellen Intervalls
-            end_time = i * 0.1  # jedes Segment hat eine Dauer von 0,1 Sekunden
-            speaker_intervals.append((current_speaker, start_time, end_time))
-            
-            # Neues Intervall starten
-            current_speaker = smoothed_predictions[i]
-            start_time = i * 0.1  # Neues Intervall beginnt hier
-
-    # Das letzte Intervall hinzufügen
-    end_time = len(smoothed_predictions) * 0.1
-    speaker_intervals.append((current_speaker, start_time, end_time))
-
-    # Ausgabe der Sprecher-Intervalle
-    for speaker, start, end in speaker_intervals:
-        recognized=["Biden", "Moderator" ,"Trump","Unbekannt"][speaker]
-        print(f"\nAnalyse von {os.path.basename(audio_file)}:")
-        print(f"Sprecher {recognized}: {start:.2f}s - {end:.2f}s")
-    
-    return smoothed_predictions
-
 # Echzeiterkennung mit Callback
 def real_time_recognition(model,scaler):
     prediction =None #Speichert erkannte Sprecher während Programmsdurchlauf
@@ -799,67 +718,119 @@ def audio_to_text(audio_path):
         print(f"Die Datei {audio_path} wurde nicht gefunden.")
         return None
 
-# Funktion zur segmentweisen Analyse der Audiodatei mit Sprechererkennung
 
-def segment_and_analyze_with_svm(audio_file, model, scaler,segment_length=0.1, window_size=3, sr=16000):
-    label_to_name = {0: "Biden", 1: "Moderator", 2: "Trump"}  # Zuordnung der Labels zu Namen
+def segment_and_analyze_with_svm(audio_file, model, scaler, segment_length=0.25, sr=16000):
+    """
+    Segment the audio file into smaller chunks, classify each segment, and smooth predictions using HMM.
+    
+    Parameters:
+        audio_file (str): Path to the audio file.
+        model: Trained SVM model.
+        scaler: StandardScaler instance used to normalize features.
+        segment_length (float): Length of each segment in seconds.
+        sr (int): Sampling rate for audio processing.
+
+    Returns:
+        transcript (list): List of recognized speaker intervals with timestamps.
+    """
+    label_to_name = {0: "Biden", 1: "Moderator", 2: "Trump"}  # Mapping of labels to speaker names
 
     if not os.path.isfile(audio_file):
-        raise FileNotFoundError(f"Die Datei {audio_file} existiert nicht.")
+        raise FileNotFoundError(f"The file {audio_file} does not exist.")
 
+    # Load the audio file
     audio, _ = librosa.load(audio_file, sr=sr)
     segment_samples = int(segment_length * sr)
     num_segments = len(audio) // segment_samples
 
-    print(f"\nAnalyse von {os.path.basename(audio_file)}:")
-    print(f"Segmentlänge: {segment_length}s, Fenstergröße: {window_size}")
+    print(f"\nAnalyzing {os.path.basename(audio_file)}...")
+    print(f"Segment length: {segment_length}s")
 
+    # Initialize arrays to store results
     original_results = []
+
+    # Segment the audio file and classify each segment
     for i in range(num_segments):
         start = i * segment_samples
         end = start + segment_samples
         segment = audio[start:end]
-        mfccs_flattened = extract_features(segment, sr)
-        mfccs_flattened=scaler.transform([mfccs_flattened])
-        #mfccs_flattened = mfccs_flattened.reshape(1, -1)  # Reshape für SVM-Modell
-        predicted_label = model.predict(mfccs_flattened)[0]
-        original_results.append(predicted_label)
 
-    padding = (window_size - 1) // 2
-    padded_results = [None] * padding + original_results + [None] * padding
-    cleaned_results = []
+        if len(segment) < segment_samples * 0.8:  # Skip incomplete segments
+            break
 
-    for i in range(len(original_results)):
-        window = padded_results[i:i + window_size]
-        window = [label for label in window if label is not None]
-        most_common = max(set(window), key=window.count) if window else None
-        cleaned_results.append(most_common)
+        # Extract features and predict speaker
+        features = extract_features(segment, sr)
+        features_scaled = scaler.transform([features])
+        prediction = model.predict(features_scaled)[0]
+        original_results.append(prediction)
 
+    # Apply Hidden Markov Model for smoothing
+    smoothed_results = smooth_with_hmm(np.array(original_results), len(label_to_name))
+    #smoothed_results = smooth_with_hmm(np.array(original_results))
+
+    # Generate speaker intervals with timestamps
+    transcript = []
     current_speaker = None
-    segment_start_time = 0
+    segment_start_time = 0.0
 
-    def format_time(seconds):
-        m = int(seconds // 60)
-        s = int(seconds % 60)
-        ms = int((seconds % 1) * 1000)
-        return f"{m:02}:{s:02}:{ms:03}"
-
-    for i, speaker in enumerate(cleaned_results):
-        speaker_name = label_to_name.get(speaker, "Unbekannt")
+    for i, speaker_label in enumerate(smoothed_results):
+        speaker_name = label_to_name.get(speaker_label, "Unknown")
         if speaker_name != current_speaker:
             if current_speaker is not None:
-                end_time = i * segment_length
-                print(f"[{format_time(segment_start_time)} - {format_time(end_time)}] {current_speaker}")
+                segment_end_time = i * segment_length
+                transcript.append((current_speaker, segment_start_time, segment_end_time))
+                print(f"[{segment_start_time:.2f}s - {segment_end_time:.2f}s] {current_speaker}")
             current_speaker = speaker_name
             segment_start_time = i * segment_length
 
+    # Add the last speaker interval
     if current_speaker is not None:
-        end_time = num_segments * segment_length
-        print(f"[{format_time(segment_start_time)} - {format_time(end_time)}] {current_speaker}")
+        segment_end_time = num_segments * segment_length
+        transcript.append((current_speaker, segment_start_time, segment_end_time))
+        print(f"[{segment_start_time:.2f}s - {segment_end_time:.2f}s] {current_speaker}")
 
-# Beispiel für die Initialisierung eines SVM-Modells
-# model = SVC(kernel='linear', probability=True)
-# model.fit(X_train, y_train)
+    return transcript
+
+
+def smooth_with_hmm(predictions, num_classes):
+    """
+    Smooth predictions using a Gaussian Hidden Markov Model (HMM).
+
+    Parameters:
+        predictions (np.array): Continuous numerical predictions (e.g., probabilities or features).
+        num_classes (int): Number of unique speaker classes.
+
+    Returns:
+        np.array: Smoothed predictions.
+    """
+    from hmmlearn import hmm
+    import numpy as np
+
+    # Reshape predictions to match HMM input shape
+    reshaped_predictions = predictions.reshape(-1, 1)
+
+    # Initialize Gaussian HMM
+    model = hmm.GaussianHMM(n_components=num_classes, covariance_type="diag", n_iter=100,init_params='', random_state=42)
+
+    # Set realistic start probabilities
+    model.startprob_ = np.full(num_classes, 1.0 / num_classes)
+
+    # Set realistic transition probabilities
+    transition_prob = 0.1
+    model.transmat_ = np.full((num_classes, num_classes), transition_prob / (num_classes - 1))
+    np.fill_diagonal(model.transmat_, 1.0 - transition_prob)
+
+    # Fit the HMM model on the data (unsupervised)
+    try:
+        model.fit(reshaped_predictions)
+    except ValueError as e:
+        print(f"HMM fit error: {e}")
+        return predictions  # Return the original predictions if HMM fails to fit
+
+    # Decode the smoothed predictions using Viterbi algorithm
+    smoothed_predictions = model.predict(reshaped_predictions)
+    
+    return smoothed_predictions
 
 
 if __name__ == "__main__":
@@ -880,8 +851,8 @@ if __name__ == "__main__":
         
         # Sprechererkennung mit Glättung durchführen
         #speaker_recognition_with_smoothing(file,model, scaler, x_neighbors=2, window_size=5)
-        segment_and_analyze_with_output(file, model, scaler,segment_length=0.5, window_size=5, sr=22050)
-
-        
+        #segment_and_analyze_with_output(file, model, scaler,segment_length=0.5, window_size=5, sr=22050)
+        segment_and_analyze_with_svm(file, model, scaler, segment_length=0.25, sr=16000)
+         
         #process_mp3_file(file, model,scaler)
         print()
