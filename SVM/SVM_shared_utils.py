@@ -13,7 +13,12 @@ import sounddevice as sd
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold, learning_curve, RandomizedSearchCV
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report, confusion_matrix, precision_score, recall_score, f1_score, accuracy_score, roc_curve, auc, precision_recall_curve, roc_auc_score
+from sklearn.metrics import (
+    classification_report, confusion_matrix,
+    precision_score, recall_score, f1_score, 
+    accuracy_score, roc_curve, auc,
+    precision_recall_curve, roc_auc_score
+    )
 from sklearn.datasets import load_iris
 from scipy.stats import uniform
 from scipy.ndimage import uniform_filter1d
@@ -68,7 +73,7 @@ def process_file(file_path, label, segment_length=0.1, sr=22050):
         # augmented_audio = augment_audio(audio)
         features=[]
         labels=[] 
-        
+        #print("process_file in Bearbeitung.......") 
         segment_samples = int(segment_length * sr)
         num_segments = len(audio) // segment_samples
 
@@ -87,8 +92,9 @@ def process_file(file_path, label, segment_length=0.1, sr=22050):
         return [], []
 
 # Funktion zum Laden der Audiodaten und Extrahieren der zugehörigen Merkmale und Labels
-def load_data(path,segment_length=0.1, sr=22050):
-    label_map = {"Biden": 0, "Moderator": 1, "Trump": 2}  # Neue Labels
+def load_data(path,label_map,segment_length, sr=22050):
+    
+    print("load_data in Bearbeitung.......")
     features, labels = [], []
 
     for speaker in label_map.keys():
@@ -97,7 +103,7 @@ def load_data(path,segment_length=0.1, sr=22050):
             print(f"Warnung: Ordner {speaker_path} existiert nicht.")
             continue
 
-        files = [os.path.join(speaker_path, file) for file in os.listdir(speaker_path) if file.endswith(".mp3")]
+        files = [os.path.join(speaker_path, file) for file in os.listdir(speaker_path) if file.endswith(".mp3") or file.endswith(".wav")]
         #print(f"Verarbeite {len(files)} Dateien für Klasse '{speaker}' (Label {label_map[speaker]})")
         if len(files) == 0:
             print(f"Keine Dateien für {speaker} gefunden.")
@@ -142,6 +148,8 @@ def randomized_search_svm(X_train, y_train, n_iter=5, random_state=42):
     
     # Führe das RandomizedSearch durch
     randomized_search.fit(X_train, y_train)
+    print("fitting abgeschlossen")
+    
     
     print(f"Beste Parameter: {randomized_search.best_params_}")
     print(f"Beste Kreuzvalidierungsgenauigkeit: {randomized_search.best_score_ * 100:.2f}%")
@@ -200,9 +208,10 @@ from sklearn.utils import shuffle
 from sklearn.decomposition import PCA
 
 
-def train_svm_model_optuna(path, segment_length=0.1, sr=22050):
+def train_svm_model_optuna(path, label_map,segment_length, sr=22050):
     
-    X, y = load_data(path,segment_length=0.1, sr=22050)
+    
+    X, y = load_data(path,label_map,segment_length,  sr)
     X, y = shuffle(X,y,random_state=42)
     
     print(f"Feature-Shape: {X.shape}, Label-Shape: {y.shape}")
@@ -264,10 +273,10 @@ def train_svm_model_optuna(path, segment_length=0.1, sr=22050):
 
     
     y_pred = best_model.predict(X_test)
-    plot_confusion_matrix(y_test, y_pred)
+    plot_confusion_matrix(y_test, y_pred,label_map)
     
     # Evaluieren des Modells
-    evaluate_model(y_test, y_pred)
+    evaluate_model(y_test, y_pred,label_map)
     
     plot_learning_curve(best_model, X_train, y_train) #plot der learning Kurve
     
@@ -275,9 +284,9 @@ def train_svm_model_optuna(path, segment_length=0.1, sr=22050):
     return best_model, myScaler
 
 # SVM Modell trainieren
-def train_svm_model(path, segment_length=0.1, sr=22050):
+def train_svm_model(path, label_map, segment_length=0.1, sr=22050):
     
-    X, y = load_data(path,segment_length=0.1, sr=22050)
+    X, y = load_data(path,label_map, segment_length=0.1, sr=22050)
     X, y = shuffle(X,y,random_state=42)
     
     print(f"Feature-Shape: {X.shape}, Label-Shape: {y.shape}")
@@ -296,14 +305,17 @@ def train_svm_model(path, segment_length=0.1, sr=22050):
     #best_model = hyperparameter_tuning_GridSsearchCV(X_train, y_train)
     
     # SVM-Modell mit RandomizedSearchCV trainieren
+    start_time = time.time()
     best_model = randomized_search_svm(X_train, y_train)
+    end_time = time.time()
+    print(f"Optimierung mit Randomize abgeschlossen in {end_time - start_time:.2f} Sekunden.")
     
     best_model.fit(X_train, y_train)
     accuracy = accuracy.score(X_test, y_test)
     print(f"Genauigkeit des besten SVM-Modells: {accuracy*100:.2f}%")
     
     y_pred = best_model.predict(X_test)
-    plot_confusion_matrix(y_test, y_pred)
+    plot_confusion_matrix(y_test, y_pred,label_map)
     
     # Evaluieren des Modells
     evaluate_model(y_test, y_pred)
@@ -322,13 +334,13 @@ def train_svm_model(path, segment_length=0.1, sr=22050):
     return best_model, scaler
 
 # Funktion zur Berechnung von mehreren Metriken
-def evaluate_model(y_test, y_pred):
+def evaluate_model(y_test, y_pred,label_map):
     """
     Berechnet mehrere Metriken zur Modellbewertung und gibt sie aus.
     """
     #print(classification_report(y_test, y_pred))
     
-    print(classification_report(y_test, y_pred, target_names=["Biden", "Moderator", "Trump"]))
+    print(classification_report(y_test, y_pred, target_names=label_map))
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred, average='weighted')
     recall = recall_score(y_test, y_pred, average='weighted')
@@ -358,9 +370,14 @@ def plot_learning_curve(model, X_train, y_train):
     plt.show()
 
 # Klassifikationsbericht und Confusion Matrix visualisieren
-def plot_confusion_matrix(y_test, y_pred):
+def plot_confusion_matrix(y_test, y_pred,label_map):
+    labels=[]
+    for name in label_map:
+        labels.append(name)
+        
+    labels.append("unbekannt")
     cm = confusion_matrix(y_test, y_pred)
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=["Biden", "Moderator" ,"Trump","Unbekannt"], yticklabels=["Biden", "Moderator" ,"Trump","Unbekannt"])
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
     plt.xlabel('Predicted')
     plt.ylabel('True')
     plt.title('Confusion Matrix')
@@ -627,7 +644,7 @@ def audio_to_text(audio_path):
         return None
 
 
-def segment_and_analyze_with_svm(audio_file, model, scaler, segment_length=0.25, sr=22050):
+def segment_and_analyze_with_svm(audio_file, model, scaler, label_map, segment_length=0.25, sr=22050):
     """
     Segment the audio file into smaller chunks, classify each segment, and smooth predictions using HMM.
     
@@ -641,8 +658,9 @@ def segment_and_analyze_with_svm(audio_file, model, scaler, segment_length=0.25,
     Returns:
         transcript (list): List of recognized speaker intervals with timestamps.
     """
-    label_to_name = {0: "Biden", 1: "Moderator", 2: "Trump"}  # Mapping of labels to speaker names
-
+    # von "label":key (bisheriges forms von label_map) zu key:"label"
+    label_map = {v: k for k, v in label_map.items()}
+    
     if not os.path.isfile(audio_file):
         raise FileNotFoundError(f"The file {audio_file} does not exist.")
 
@@ -680,9 +698,9 @@ def segment_and_analyze_with_svm(audio_file, model, scaler, segment_length=0.25,
     transcript = []
     current_speaker = None
     segment_start_time = 0.0
-
+    
     for i, speaker_label in enumerate(smoothed_results):
-        speaker_name = label_to_name.get(speaker_label, "Unknown")
+        speaker_name = label_map.get(speaker_label, "Unknown")
         if speaker_name != current_speaker:
             if current_speaker is not None:
                 segment_end_time = i * segment_length
@@ -745,42 +763,26 @@ def smooth_with_moving_average(predictions, window_size=3):
     return np.round(smoothed_predictions).astype(int)
 
 
-def plot_speaker_timeline1(transcript, audio_file):
-    audio, sr = librosa.load(audio_file, sr=16000)
-    duration=len(audio) / sr
-    
-    fig, ax = plt.subplots(figsize=(12, 3))
-    color_map = cm.get_cmap('tab10', len(set([t[0] for t in transcript])))
-    
-    for speaker, start, end in transcript:
-        ax.plot([start, end], [speaker, speaker], label=speaker, linewidth=6)
-    ax.set_yticks(range(len(set([t[0] for t in transcript]))))
-    ax.set_yticklabels(list(set([t[0] for t in transcript])))
-    plt.xlabel("Time (s)")
-    plt.ylabel("Speaker")
-    plt.title("Speaker Timeline")
-    plt.legend()
-    plt.show()
-    
 def plot_speaker_timeline(transcript, audio_file):
     """
     Plots a speaker timeline with consistent colors for each label.
-    
+
     Parameters:
         transcript: List of tuples (speaker, start_time, end_time).
         audio_file: Path to the audio file (used to get the duration).
     """
-    import librosa
-    import matplotlib.pyplot as plt
-
     # Load audio to determine the duration
     audio, sr = librosa.load(audio_file, sr=16000)
     duration = len(audio) / sr
 
-    # Create a unique color mapping for each speaker
+    # Eigene Farben definieren
+    mycolors = ["blue", "orange", "red","pink", "yellow", "green", "gray"]
+
+    # Einzigartige Sprecher extrahieren
     speakers = sorted(set([t[0] for t in transcript]))
-    color_map = cm.get_cmap('tab10', len(speakers))
-    speaker_colors = {speaker: color_map(i) for i, speaker in enumerate(speakers)}
+
+    # Dictionary für konsistente Farbzuordnung erstellen
+    speaker_colors = {speaker: mycolors[i % len(mycolors)] for i, speaker in enumerate(speakers)}
 
     # Plot the timeline
     fig, ax = plt.subplots(figsize=(12, 3))
@@ -796,31 +798,3 @@ def plot_speaker_timeline(transcript, audio_file):
     plt.title("Speaker Timeline")
     plt.yticks([])
     plt.show()
-
-
-if __name__ == "__main__":
-    
-    audio_path = r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\US-Wahlkampf"
-    label_map = {"Biden": 0, "Moderator": 1, "Trump": 2}
-    segment_length=0.5
-    model ,scaler= train_svm_model_optuna(audio_path,segment_length)
-    
-    test_files=[
-        r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\US-Wahlkampf\15-25.mp3",
-        r"C:\Spracherkennung\Spracherkennung-Deep-Learning-\US-Wahlkampf\15-17.mp3",
-    ]
-    
-    for file in test_files:
-        #predict_speaker(model, file, scaler)
-        # test mit Segmentierte Audio Dateien
-        #process_audio_file3(file, model,scaler)
-        #audio_to_text(file)
-        
-        # Sprechererkennung mit Glättung durchführen
-        transcript = segment_and_analyze_with_svm(file, model, scaler, segment_length=0.25, sr=16000)
-        plot_speaker_timeline(transcript, file)
-
-        #process_mp3_file(file, model,scaler)
-        print()
-        
-    live_audio_analysis_svm(model, scaler, label_map, segment_length=0.1, sr=16000, window_size=3)
