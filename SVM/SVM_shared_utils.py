@@ -1,7 +1,7 @@
-import librosa, queue, time, speech_recognition as sr, optuna
-import numpy as np, pandas as pd, os, sounddevice as sd, soundfile as sf,matplotlib.pyplot as plt, seaborn as sns, warnings
+import librosa, queue, time, speech_recognition as sr, optuna, seaborn as sns, warnings
+import numpy as np, pandas as pd, os, sounddevice as sd, soundfile as sf,matplotlib.pyplot as plt
 from joblib import Parallel, delayed, parallel_backend
-from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold, learning_curve, RandomizedSearchCV,cross_val_score
+from sklearn.model_selection import train_test_split, StratifiedKFold, learning_curve, RandomizedSearchCV,cross_val_score
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
@@ -60,7 +60,7 @@ def extract_features(audio, sr=22050, n_mfcc=13, n_fft=1024, hop_length=512, n_m
     
     return mfccs.flatten() #Shape Für SVM anpassen
 
-# Augmentation: Add noise
+# Augmentation: Geräusche hinzufügen
 def augment_audio(audio):
     noise = np.random.randn(len(audio)) * 0.005
     return audio + noise
@@ -90,7 +90,7 @@ def process_file(file_path, label, sr=22050):
         print(f"Fehler während der Bearbeitung des Dateien {file_path}: {e}")
         return [], []
 
-#Merkmale eine Einzelne Datei EXtrahieren.
+# Merkmale eine Einzelne Datei EXtrahieren.
 def process_file_with_seg(file_path, label, segment_length=0.1, sr=22050):
     """
     Segmentiert eine Audiodatei in kleinere Abschnitte und extrahiert Merkmale aus jedem Segment.
@@ -197,7 +197,7 @@ def load_data(path,label_map,segment_length, sr=22050):
     return np.array(features), np.array(labels)
 
 # Funktionen zur Erstellung und Suche nach besten Hyperparametern
-#Hyperparameter-Tunning mit Randomize-search
+# Hyperparameter-Tunning mit Randomize-search
 def randomized_search_svm(X_train, y_train, n_iter=10, random_state=42):
     """
     Hyperparameter Optimierug mit RandomizedSearchCV.
@@ -236,7 +236,6 @@ def randomized_search_svm(X_train, y_train, n_iter=10, random_state=42):
     print(f"Beste Kreuzvalidierungsgenauigkeit: {randomized_search.best_score_ * 100:.2f}%")
     
     return randomized_search.best_estimator_
-
 
 def objective(trial,X_train, y_train):
     """
@@ -434,7 +433,7 @@ def evaluate_model(y_test, y_pred,label_map):
     print(f"Recall (Weighted): {recall * 100:.2f}%")
     print(f"F1-Score (Weighted): {f1 * 100:.2f}%")
     
-#learning Kurve
+# learning Kurve
 def plot_learning_curve(model, X_train, y_train):
     """
     Zeigt die Lernkurve eines Modells, um Overfitting oder Underfitting zu analysieren.
@@ -461,7 +460,7 @@ def plot_learning_curve(model, X_train, y_train):
     plt.legend()
     plt.show()
 
-#Confusion Matrix visualisieren
+# Confusion Matrix visualisieren
 def plot_confusion_matrix(y_test, y_pred,label_map):
     """
     Visualisiert die Confusion-Matrix für die Modellbewertung.
@@ -514,195 +513,6 @@ def predict_speaker(model, audio_file, scaler):
     except Exception as e:
         print(f"Fehler während das Vorhersage des Dateis  {audio_file}: {e}")
         return "Fehler"
-
-def live_audio_analysis_svm(model, scaler, label_map, segment_length=0.1, sr=16000, window_size=3):
-    """
-    Führt eine Live-Sprechererkennung mit einem SVM-Modell durch und glättet die Ergebnisse.
-
-    Parameter:
-    - model (sklearn.SVC): Das trainierte SVM-Modell
-    - scaler (StandardScaler): Der für das Modell verwendete Scaler
-    - label_map (dict): Mapping von Sprechernamen zu Labels
-    - segment_length (float): Länge der Segmente in Sekunden
-    - sr (int): Sampling-Rate
-    - window_size (int): Fenstergröße für die Glättung der Ergebnisse
-    """
-    buffer = queue.Queue()
-    label_to_name = {v: k for k, v in label_map.items()}
-    segment_samples = int(segment_length * sr)
-    current_audio = np.zeros(0, dtype=np.float32)
-
-    def callback(indata, frames, time, status):
-        if status:
-            print(status)
-        # Aufgenommene Audiodaten in den Puffer speichern
-        buffer.put(indata[:, 0])
-
-    def format_time(seconds):
-        """Hilfsfunktion, um Sekunden in mm:ss:msms-Format zu formatieren."""
-        m = int(seconds // 60)
-        s = int(seconds % 60)
-        ms = int((seconds % 1) * 1000)
-        return f"{m:02}:{s:02}:{ms:03}"
-
-    with sd.InputStream(samplerate=sr, channels=1, callback=callback, blocksize=segment_samples):
-        print("Live-Sprechererkennung gestartet. Drücke STRG+C, um zu beenden.")
-
-        try:
-            original_results = []
-            start_time = 0
-
-            while True:
-                # Daten aus dem Puffer lesen und in den aktuellen Audio-Stream einfügen
-                while not buffer.empty():
-                    current_audio = np.append(current_audio, buffer.get())
-
-                # Verarbeitung in segmentierten Blöcken
-                while len(current_audio) >= segment_samples:
-                    segment = current_audio[:segment_samples]
-                    current_audio = current_audio[segment_samples:]
-
-                    # MFCCs extrahieren und skalieren
-                    mfccs = extract_features(segment, sr)  # Deine existierende Funktion für Feature-Extraktion
-                    features_scaled = scaler.transform([mfccs])
-
-                    # Vorhersage mit SVM
-                    predicted_label = model.predict(features_scaled)[0]
-                    original_results.append(predicted_label)
-
-                    # Ausgabe des aktuellen Segments
-                    speaker_name = label_to_name.get(predicted_label, "Unbekannt")
-                    print(f"[{format_time(start_time)} - {format_time(start_time + segment_length)}] {speaker_name}")
-                    start_time += segment_length
-
-                # Ergebnisse glätten und anzeigen (alle x Sekunden)
-                if len(original_results) >= window_size:
-                    smoothed_results = []
-                    padding = (window_size - 1) // 2
-                    padded_results = [None] * padding + original_results + [None] * padding
-
-                    for i in range(len(original_results)):
-                        window = padded_results[i:i + window_size]
-                        window = [label for label in window if label is not None]
-                        most_common = max(set(window), key=window.count) if window else None
-                        smoothed_results.append(most_common)
-
-                    # Letzte geglättete Ergebnisse ausgeben
-                    if smoothed_results:
-                        speaker_name = label_to_name.get(smoothed_results[-1], "Unbekannt")
-                        print(f"Glättung: {speaker_name}")
-
-                # Wartezeit für Live-Streaming
-                sd.sleep(int(segment_length * 1000))
-
-        except KeyboardInterrupt:
-            print("Erkennung beendet.")
-
-def audio_to_text2(audio_path,language):
-    """
-    Konvertiert eine Audiodatei in Text.
-    
-    :param audio_path: Der Dateipfad zur Audiodatei
-    :return: Der erkannte Text (oder eine Fehlermeldung)
-    """
-    recognizer = sr.Recognizer()
-    
-    try:
-        # Laden der Audiodatei
-        with sr.AudioFile(audio_path) as source:
-            print("Lade Audio...")
-            audio_data = recognizer.record(source)  # Lesen der gesamten Audiodatei
-            
-        # Umwandeln von Audio zu Text
-        print("Erkenne Text...")
-        text = recognizer.recognize_sphinx(audio_data, language)
-        if text:
-            print("Erkannter Text:", text)
-        else:
-            print("Es wurde kein Text erkannt.")
-        return text
-    
-    except sr.UnknownValueError:
-        print("Die Sprache konnte nicht erkannt werden.")
-        return None
-    except sr.RequestError as e:
-        print(f"Fehler bei der Anfrage an die Speech Recognition API: {e}")
-        return None
-    except FileNotFoundError:
-        print(f"Die Datei {audio_path} wurde nicht gefunden.")
-        return None
-
-import os
-import librosa
-import numpy as np
-import speech_recognition as sr
-
-def audio_to_text(audio_file, transcript, language="en-US"):
-    """
-    Ziel:
-    Verwendet das segmentierte `transcript`, um nur relevante Segmente zu analysieren und wandelt sie in Text um.
-
-    Eingabeparameter:
-    - audio_file (str): Pfad zur Audiodatei.
-    - transcript (list): Liste mit Sprecher-Intervallen [(Sprecher, Startzeit, Endzeit)].
-    - language (str): Sprachcode für die Spracherkennung (Standard: "en-US" für Englisch).
-
-    Ausgabe:
-    - Speichert das erkannte Transkript in einer `.txt`-Datei mit demselben Namen wie `audio_file`.
-    - Gibt das erkannte Transkript als Zeichenkette zurück.
-    """
-    recognizer = sr.Recognizer()
-
-    # Speicherpfad für das vollständige Transkript
-    output_file = os.path.splitext(audio_file)[0] + "_full_transcript.txt"
-
-    # Laden der gesamten Audiodatei mit librosa
-    audio, sr_rate = librosa.load(audio_file, sr=16000)
-
-    full_transcript = []
-
-    for speaker, start_time, end_time in transcript:
-        # Umwandlung von Zeit (Sekunden) in Sample-Indizes
-        start_sample = int(start_time * sr_rate)
-        end_sample = int(end_time * sr_rate)
-
-        # Audio-Segment extrahieren
-        segment_audio = audio[start_sample:end_sample]
-
-        # Konvertiere Segment in eine WAV-Datei für SpeechRecognition
-        temp_wav = "temp_segment.wav"
-        #librosa.output.write_wav(temp_wav, segment_audio, sr_rate)
-        sf.write(temp_wav, segment_audio, sr_rate)
-
-        try:
-            with sr.AudioFile(temp_wav) as source:
-                #print(f" Processing Segment [{start_time:.2f}s - {end_time:.2f}s] for {speaker}...")
-                audio_data = recognizer.record(source)
-
-                # Speech Recognition durchführen
-                text = recognizer.recognize_sphinx(audio_data, language)
-
-                if text:
-                    #print(f"Recognized for {speaker}: {text}")
-                    full_transcript.append(f"[{start_time:.2f}s - {end_time:.2f}s] : {speaker} \"{text}\"")
-                else:
-                    #print(f" No speech detected for {speaker}.")
-                    full_transcript.append(f"[{start_time:.2f}s - {end_time:.2f}s] : {speaker} \"(No Recognition)\"")
-
-        except sr.UnknownValueError:
-            print(f" No understandable speech detected in segment [{start_time:.2f}s - {end_time:.2f}s].")
-            full_transcript.append(f"[{start_time:.2f}s - {end_time:.2f}s] : {speaker} \"(Unintelligible)\"")
-        except sr.RequestError as e:
-            print(f"API request error: {e}")
-
-    # Speichern des Transkripts
-    with open(output_file, "w", encoding="utf-8") as file:
-        file.write("\n".join(full_transcript))
-
-    print(f"\n Full transcript saved at: {output_file}")
-
-    return full_transcript
-
 
 def segment_and_analyze_with_svm(audio_file, model, scaler, label_map, segment_length=0.25, sr=22050):
     """
@@ -904,3 +714,152 @@ def plot_speaker_Gantt(transcript, audio_file):
     plt.ylabel("Speakers")
     plt.title("Speaker Timeline (Gantt Chart)")
     plt.show()
+
+def audio_to_text(audio_file, transcript, language="en-US"):
+    """
+    Verwendet die Zeitstempelliste `transcript`, um nur relevante Segmente zu analysieren und wandelt sie in Text um.
+
+    Eingabeparameter:
+    - audio_file (str): Pfad zur Audiodatei.
+    - transcript (list): Liste mit Sprecher-Intervallen [(Sprecher, Startzeit, Endzeit)].
+    - language (str): Sprachcode für die Spracherkennung (Standard: "en-US" für Englisch).
+
+    Ausgabe:
+    - Speichert das erkannte Transkript in einer `.txt`-Datei mit demselben Namen wie `audio_file`.
+    - Gibt das erkannte Transkript als Zeichenkette zurück.
+    """
+    recognizer = sr.Recognizer()
+
+    # Speicherpfad für das vollständige Transkript
+    output_file = os.path.splitext(audio_file)[0] + "_full_transcript.txt"
+
+    # Laden der gesamten Audiodatei mit librosa
+    audio, sr_rate = librosa.load(audio_file, sr=16000)
+
+    full_transcript = []
+
+    for speaker, start_time, end_time in transcript:
+        # Umwandlung von Zeit (Sekunden) in Sample-Indizes
+        start_sample = int(start_time * sr_rate)
+        end_sample = int(end_time * sr_rate)
+
+        # Audio-Segment extrahieren
+        segment_audio = audio[start_sample:end_sample]
+
+        # Konvertiere Segment in eine WAV-Datei für SpeechRecognition
+        temp_wav = "temp_segment.wav"
+        #librosa.output.write_wav(temp_wav, segment_audio, sr_rate)
+        sf.write(temp_wav, segment_audio, sr_rate)
+
+        try:
+            with sr.AudioFile(temp_wav) as source:
+                #print(f" Processing Segment [{start_time:.2f}s - {end_time:.2f}s] for {speaker}...")
+                audio_data = recognizer.record(source)
+
+                # Speech Recognition durchführen
+                text = recognizer.recognize_sphinx(audio_data, language)
+
+                if text:
+                    #print(f"Recognized for {speaker}: {text}")
+                    full_transcript.append(f"[{start_time:.2f}s - {end_time:.2f}s] : {speaker} \"{text}\"")
+                else:
+                    #print(f" No speech detected for {speaker}.")
+                    full_transcript.append(f"[{start_time:.2f}s - {end_time:.2f}s] : {speaker} \"(No Recognition)\"")
+
+        except sr.UnknownValueError:
+            print(f" No understandable speech detected in segment [{start_time:.2f}s - {end_time:.2f}s].")
+            full_transcript.append(f"[{start_time:.2f}s - {end_time:.2f}s] : {speaker} \"(Unintelligible)\"")
+        except sr.RequestError as e:
+            print(f"API request error: {e}")
+
+    # Speichern des Transkripts
+    with open(output_file, "w", encoding="utf-8") as file:
+        file.write("\n".join(full_transcript))
+
+    print(f"\n Full transcript saved at: {output_file}")
+
+    return full_transcript
+
+# Echtzeiterkennung
+def live_audio_analysis_svm(model, scaler, label_map, segment_length=0.1, sr=16000, window_size=3):
+    """
+    Führt eine Live-Sprechererkennung mit einem SVM-Modell durch und glättet die Ergebnisse.
+
+    Parameter:
+    - model (sklearn.SVC): Das trainierte SVM-Modell
+    - scaler (StandardScaler): Der für das Modell verwendete Scaler
+    - label_map (dict): Mapping von Sprechernamen zu Labels
+    - segment_length (float): Länge der Segmente in Sekunden
+    - sr (int): Sampling-Rate
+    - window_size (int): Fenstergröße für die Glättung der Ergebnisse
+    """
+    buffer = queue.Queue()
+    label_to_name = {v: k for k, v in label_map.items()}
+    segment_samples = int(segment_length * sr)
+    current_audio = np.zeros(0, dtype=np.float32)
+
+    def callback(indata, frames, time, status):
+        if status:
+            print(status)
+        # Aufgenommene Audiodaten in den Puffer speichern
+        buffer.put(indata[:, 0])
+
+    def format_time(seconds):
+        """Hilfsfunktion, um Sekunden in mm:ss:msms-Format zu formatieren."""
+        m = int(seconds // 60)
+        s = int(seconds % 60)
+        ms = int((seconds % 1) * 1000)
+        return f"{m:02}:{s:02}:{ms:03}"
+
+    with sd.InputStream(samplerate=sr, channels=1, callback=callback, blocksize=segment_samples):
+        print("Live-Sprechererkennung gestartet. Drücke STRG+C, um zu beenden.")
+
+        try:
+            original_results = []
+            start_time = 0
+
+            while True:
+                # Daten aus dem Puffer lesen und in den aktuellen Audio-Stream einfügen
+                while not buffer.empty():
+                    current_audio = np.append(current_audio, buffer.get())
+
+                # Verarbeitung in segmentierten Blöcken
+                while len(current_audio) >= segment_samples:
+                    segment = current_audio[:segment_samples]
+                    current_audio = current_audio[segment_samples:]
+
+                    # MFCCs extrahieren und skalieren
+                    mfccs = extract_features(segment, sr)  # Deine existierende Funktion für Feature-Extraktion
+                    features_scaled = scaler.transform([mfccs])
+
+                    # Vorhersage mit SVM
+                    predicted_label = model.predict(features_scaled)[0]
+                    original_results.append(predicted_label)
+
+                    # Ausgabe des aktuellen Segments
+                    speaker_name = label_to_name.get(predicted_label, "Unbekannt")
+                    print(f"[{format_time(start_time)} - {format_time(start_time + segment_length)}] {speaker_name}")
+                    start_time += segment_length
+
+                # Ergebnisse glätten und anzeigen (alle x Sekunden)
+                if len(original_results) >= window_size:
+                    smoothed_results = []
+                    padding = (window_size - 1) // 2
+                    padded_results = [None] * padding + original_results + [None] * padding
+
+                    for i in range(len(original_results)):
+                        window = padded_results[i:i + window_size]
+                        window = [label for label in window if label is not None]
+                        most_common = max(set(window), key=window.count) if window else None
+                        smoothed_results.append(most_common)
+
+                    # Letzte geglättete Ergebnisse ausgeben
+                    if smoothed_results:
+                        speaker_name = label_to_name.get(smoothed_results[-1], "Unbekannt")
+                        print(f"Glättung: {speaker_name}")
+
+                # Wartezeit für Live-Streaming
+                sd.sleep(int(segment_length * 1000))
+
+        except KeyboardInterrupt:
+            print("Erkennung beendet.")
