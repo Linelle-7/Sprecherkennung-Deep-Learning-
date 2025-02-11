@@ -62,8 +62,8 @@ Echtzeit-Speaker-Klassifikation mit gleitendem Durchschnitt (Moving Average).
 📊 Ausgabebeispiel einen Gantt-Diagramm
 
 |------ Sprecher A ------|                                            
-                          |---- Sprecher B ----|  
-                                                |---- Sprecher C ---|
+                                          |---- Sprecher B ----|  
+                                                                          |---- Sprecher C ---|
 
 ### Metriken zur Bewertung
 
