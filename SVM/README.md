@@ -26,12 +26,12 @@ Dieses Projekt ermöglicht die automatische Sprechererkennung in Audiodateien un
 
 ### Installation & Ausführung
 
-- 1️⃣ Voraussetzungen installieren
+#### 1. Voraussetzungen installieren
   
   ```bash
   pip install librosa matplotlib numpy pandas scikit-learn optuna joblib sounddevice hmmlearn seaborn
 
-- 2️⃣ Skript ausführen
+#### 2. Skript ausführen
 
 main teil
 
@@ -59,11 +59,6 @@ Ergebnis kann in einem textdatei gespeichert und als Gantt-Chart visualisiert we
 
 Echtzeit-Speaker-Klassifikation mit gleitendem Durchschnitt (Moving Average).
 
-📊 Ausgabebeispiel einen Gantt-Diagramm
-
-|------ Sprecher A ------|                                            
-                                          |---- Sprecher B ----|  
-                                                                          |---- Sprecher C ---|
 
 ### Metriken zur Bewertung
 
