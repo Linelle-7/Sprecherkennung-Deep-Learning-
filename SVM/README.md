@@ -27,7 +27,8 @@ Dieses Projekt ermöglicht die automatische Sprechererkennung in Audiodateien un
 ### Installation & Ausführung
 
 - 1️⃣ Voraussetzungen installieren
- ```bash
+  
+```bash
 pip install librosa matplotlib numpy pandas scikit-learn optuna joblib sounddevice hmmlearn seaborn
 
 - 2️⃣ Skript ausführen
