@@ -188,14 +188,13 @@ def train_optimized_model(X, y, num_classes, epochs=20, batch_size=16, n_trials=
 
     return best_model
 
-def train_model(X, y, audio_path, label_map, segment_length=0.1, sr=22050, epochs=20, batch_size=16):
+def train_model(X, y, label_map, epochs=20, batch_size=16):
     """
     Trainiert ein CNN-Modell mit segmentierten Trainingsdaten.
 
     Parameter:
     - audio_path (str): Pfad zum Datensatz
     - label_map (dict): Mapping von Sprechernamen zu Labels
-    - segment_length (float): Länge der Segmente in Sekunden
     - sr (int): Sampling-Rate
     - epochs (int): Anzahl der Trainings-Epochen
     - batch_size (int): Batch-Größe für das Training
@@ -292,7 +291,7 @@ def segment_and_analyze_with_output(audio_file, model, label_map, segment_length
     cleaned_results = []
 
     for i in range(len(original_results)):
-        window = padded_results[i:i + window_size]
+        window = padded_results[i - padding:i + padding]
         window = [label for label in window if label is not None]
         cleaned_results.append(max(set(window), key=window.count) if window else None)
 
@@ -310,7 +309,7 @@ def segment_and_analyze_with_output(audio_file, model, label_map, segment_length
         modelname = "optuna"
     else:
         modelname = "standard"
-    output_file_name = os.path.join("CNN", "Ausgaben", os.path.splitext(os.path.basename(audio_file))[0] + "_" + modelname + ".txt")
+    output_file_name = os.path.join("CNN", "Ausgaben", os.path.splitext(os.path.basename(audio_file))[0] + "_" + modelname + "_" + str(window_size) + ".txt")
     with open(output_file_name, 'w') as output_file:
         for i, speaker in enumerate(cleaned_results):
             speaker_name = label_to_name.get(speaker, "Unbekannt")
