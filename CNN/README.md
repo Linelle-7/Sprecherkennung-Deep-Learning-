@@ -15,4 +15,10 @@
 
 ## Ausgabe
 
-<p>Alle Ausgaben (Textdatein, JSON History Datein des Lernens, Bilddatein der Genauigkeitsvergleiche) werden in dem Unterordner "/Ausgaben" gespeichert.</p>
+<p>Alle Ausgaben (Textdateien, JSON History Dateien des Lernens, Bilddateien der Genauigkeitsvergleiche) werden in dem Unterordner "/Ausgaben" gespeichert.</p>
+
+<i>Quellen: <br>
+<a href=https://towardsdatascience.com/voice-classification-using-deep-learning-with-python-6eddb9580381>Idee der Nutzung der Daten des US-Wahlkampfs</a><br>
+<a href=https://www.kaggle.com/datasets/headsortails/us-election-2020-presidential-debates>Datensatz</a><br>
+<a href=https://youtu.be/9GJ6XeB-vMg>Idee zur Umsetzung</a><br>
+<a href="https://youtube.com/playlist?list=PLhA3b2k8R3t2Ng1WW_7MiXeh1pfQJQi_P&amp;si=klCWu3GVtesWvIlK">Playlist zur Idee der Klassifikation</a></i>
