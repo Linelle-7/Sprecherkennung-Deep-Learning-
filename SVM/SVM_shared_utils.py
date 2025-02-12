@@ -198,14 +198,14 @@ def load_data(path,label_map,segment_length, sr=22050):
 
 # Funktionen zur Erstellung und Suche nach besten Hyperparametern
 # Hyperparameter-Tunning mit Randomize-search
-def randomized_search_svm(X_train, y_train, n_iter=10, random_state=42):
+def randomized_search_svm(X_train, y_train, n_iter=2, random_state=42):
     """
     Hyperparameter Optimierug mit RandomizedSearchCV.
 
     Eingabeparameter:
     - X_train (numpy.array): Trainingsdaten (Merkmale).
     - y_train (numpy.array): Trainingslabels.
-    - n_iter (int): Anzahl der Iterationen für die Suche
+    - n_iter (int): Anzahl der Iterationen für die Suche. Hier wurden verschidenen Anzahlen getestet.
     - random_state (int): Zufallsseed für Reproduzierbarkeit
 
     Ausgabe:
@@ -268,7 +268,7 @@ def objective(trial,X_train, y_train):
         return score.mean()
 
 # SVM Modell trainieren
-def train_svm_model_optuna(path, label_map,segment_length, sr=22050):
+def train_svm_model_optuna(path, methode,label_map,segment_length, sr=22050):
     """
     Hyperparameter-Optimierung mit Optuna
 
@@ -281,10 +281,11 @@ def train_svm_model_optuna(path, label_map,segment_length, sr=22050):
     Ausgabe:
     - best_model: Das trainierte und optimierte SVM-Modell.
     - myScaler: Der Skaler, der für die Transformation der Merkmale verwendet wurde.
+    -methode : ein Sting der die nahme der Optierungmodell etnhält (nüzlich für einen Späteren Plot und bessere Vergleich)
     """
     
     # Beste gefundene Parameter von Rndomizesearch mit 50 fits als Startwerte
-    initial_params = {'C': 3.845401188473625, 'degree': 5, 'gamma': 0.1, 'kernel': 'linear', 'probability': True}
+    initial_params = {'C': 6.068501579464869, 'degree': 2, 'gamma': 0.1, 'kernel': 'poly', 'probability': True}
 
     X, y = load_data(path,label_map,segment_length,  sr)
     X, y = shuffle(X,y,random_state=42)
@@ -321,7 +322,7 @@ def train_svm_model_optuna(path, label_map,segment_length, sr=22050):
     study.enqueue_trial(initial_params)
     
     start_time = time.time()
-    study.optimize(lambda trial: objective(trial, X_train, y_train), n_trials=15, n_jobs=2)  # 15 Iterationen mit Parallelisierung
+    study.optimize(lambda trial: objective(trial, X_train, y_train), n_trials=10, n_jobs=2)  # 15 Iterationen mit Parallelisierung
     end_time = time.time()
     print(f"Optimierung abgeschlossen in {end_time - start_time:.2f} Sekunden.")
 
@@ -347,17 +348,18 @@ def train_svm_model_optuna(path, label_map,segment_length, sr=22050):
     print(f"Test-Genauigkeit: {accuracy * 100:.2f}%")
 
     y_pred = best_model.predict(X_test)
-    plot_confusion_matrix(y_test, y_pred,label_map)
+    plot_confusion_matrix(y_test, y_pred,methode,label_map)
     
     # Evaluieren des Modells
     evaluate_model(y_test, y_pred,label_map)
     
-    plot_learning_curve(best_model, X_train, y_train) #plot der learning Kurve
+    # Learningskurve zeigen
+    plot_learning_curve(best_model,methode, X_train, y_train)
     
     
-    return best_model, myScaler
+    return best_model, myScaler,methode
 
-def train_svm_model(path, label_map, segment_length=0.1, sr=22050):
+def train_svm_model(path, methode,label_map, segment_length=0.1, sr=22050):
     """
     Ziel:
     Trainiert ein SVM-Modell mithilfe von RandomizedSearchCV.
@@ -371,6 +373,7 @@ def train_svm_model(path, label_map, segment_length=0.1, sr=22050):
     Ausgabe:
     - best_model: Das trainierte und optimierte SVM-Modell.
     - scaler: Der Skaler, der für die Transformation der Merkmale verwendet wurde.
+    -methode : ein Sting der die nahme der Optierungmodell etnhält (nüzlich für einen Späteren Plot und bessere Vergleich)
     """
     X, y = load_data(path,label_map, segment_length, sr)
     X, y = shuffle(X,y,random_state=42)
@@ -399,15 +402,15 @@ def train_svm_model(path, label_map, segment_length=0.1, sr=22050):
     
     #Confusion Matrix
     y_pred = best_model.predict(X_test)
-    plot_confusion_matrix(y_test, y_pred,label_map)
+    plot_confusion_matrix(y_test, y_pred,methode,label_map)
     
     # Evaluieren des Modells
     evaluate_model(y_test, y_pred,label_map)
     
     # Learningskurve zeigen
-    plot_learning_curve(best_model, X_train, y_train) #plot der learning Kurve
+    plot_learning_curve(best_model,methode, X_train, y_train) #plot der learning Kurve
     
-    return best_model, scaler
+    return best_model, scaler,methode
 
 def evaluate_model(y_test, y_pred,label_map):
     """
@@ -434,7 +437,7 @@ def evaluate_model(y_test, y_pred,label_map):
     print(f"F1-Score (Weighted): {f1 * 100:.2f}%")
     
 # learning Kurve
-def plot_learning_curve(model, X_train, y_train):
+def plot_learning_curve(model, methode, X_train, y_train):
     """
     Zeigt die Lernkurve eines Modells, um Overfitting oder Underfitting zu analysieren.
 
@@ -456,12 +459,12 @@ def plot_learning_curve(model, X_train, y_train):
     plt.plot(train_sizes, np.mean(test_scores, axis=1), label="Test Score", color='green')
     plt.xlabel('Training Size')
     plt.ylabel('Accuracy')
-    plt.title('Learning Curve')
+    plt.title('Learning Curve '+ methode)
     plt.legend()
     plt.show()
 
 # Confusion Matrix visualisieren
-def plot_confusion_matrix(y_test, y_pred,label_map):
+def plot_confusion_matrix(y_test, y_pred,methode,label_map):
     """
     Visualisiert die Confusion-Matrix für die Modellbewertung.
 
@@ -483,7 +486,7 @@ def plot_confusion_matrix(y_test, y_pred,label_map):
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
     plt.xlabel('Predicted')
     plt.ylabel('True')
-    plt.title('Confusion Matrix')
+    plt.title('Confusion Matrix ' + methode)
     plt.show()
 
 # Predict speaker
@@ -516,7 +519,7 @@ def predict_speaker(model, audio_file, scaler):
 
 def segment_and_analyze_with_svm(audio_file, model, scaler, label_map, segment_length=0.25, sr=22050):
     """
-    Segmentiert eine Audiodatei in kleine Blöcke, klassifiziert jedes Segment mit einem SVM-Modell 
+    Segmentiert eine Audiodatei in überlappende Segmente, klassifiziert jedes Segment mit einem SVM-Modell 
     und glättet die Vorhersagen mit einem Moving Average.
 
     Eingabeparameter:
@@ -525,35 +528,40 @@ def segment_and_analyze_with_svm(audio_file, model, scaler, label_map, segment_l
     - scaler: StandardScaler-Instanz für die Normalisierung der Merkmale.
     - label_map (dict): Mapping von Labels zu Sprechernamen.
     - segment_length (float): Länge jedes Segments in Sekunden (Standard: 0.25s).
+
     - sr (int): Sampling-Rate für die Audioverarbeitung (Standard: 22050 Hz).
 
     Ausgabe:
-    - transcript (list): Liste mit erkannten Sprecher-Intervallen und Zeitstempeln 'für Gantt-Diagramm erforderlich'.
-    - speichert die Ergebnisse in einer `.txt`-Datei mit demselben Namen wie `audio_file`.
+    - transcript (list): Liste mit erkannten Sprecher-Intervallen und Zeitstempeln.
+    - Ergebnisse werden in einer `.txt`-Datei gespeichert.
     """
-    # von "label":key (bisheriges forms von label_map) zu key:"label"
+    # Label-Mapping umkehren (label: key -> key: label)
     label_map = {v: k for k, v in label_map.items()}
     
     if not os.path.isfile(audio_file):
         raise FileNotFoundError(f"The file {audio_file} does not exist.")
 
     audio, _ = librosa.load(audio_file, sr=sr)
-    segment_samples = int(segment_length * sr)
-    num_segments = len(audio) // segment_samples
+    
+    overlap_factor=0.5
+    segment_samples = int(segment_length * sr)  # Anzahl Samples pro Segment
+    hop_samples = int(segment_samples * (1 - overlap_factor))  # Schrittweite zwischen Segmenten
 
-    print(f"\nAnalyzing {os.path.basename(audio_file)}...")
+    num_segments = (len(audio) - segment_samples) // hop_samples + 1
+
+    print(f"\nAnalyzing {os.path.basename(audio_file)}")
     print(f"Segment length: {segment_length}s")
 
-    # list zum sppeicherung der Ergebnisse
+    # Liste zur Speicherung der Klassifikationsergebnisse
     original_results = []
 
-    # Segmentierung und Klassifizierung jedes Segments
+    # Überlappende Segmentierung & Klassifizierung
     for i in range(num_segments):
-        start = i * segment_samples
+        start = i * hop_samples
         end = start + segment_samples
         segment = audio[start:end]
 
-        if len(segment) < segment_samples * 0.8:  # Skip incomplete segments
+        if len(segment) < segment_samples * 0.8:  # Zu kleine Segmente ignorieren
             break
 
         features = extract_features(segment, sr)
@@ -562,7 +570,7 @@ def segment_and_analyze_with_svm(audio_file, model, scaler, label_map, segment_l
         original_results.append(prediction)
 
     # Anwenden eines Moving Average zur Glättung der Vorhersagen
-    smoothed_results =  smooth_with_moving_average(np.array(original_results),3)
+    smoothed_results = smooth_with_moving_average(np.array(original_results), window_size=3)
 
     # Erstellen der Sprecherintervalle mit Zeitstempeln
     transcript = []
@@ -573,18 +581,16 @@ def segment_and_analyze_with_svm(audio_file, model, scaler, label_map, segment_l
         speaker_name = label_map.get(speaker_label, "Unknown")
         if speaker_name != current_speaker:
             if current_speaker is not None:
-                segment_end_time = i * segment_length
+                segment_end_time = segment_start_time + segment_length
                 transcript.append((current_speaker, segment_start_time, segment_end_time))
-                print(f"[{segment_start_time:.2f}s - {segment_end_time:.2f}s] {current_speaker}")
             current_speaker = speaker_name
-            segment_start_time = i * segment_length
+            segment_start_time = i * (segment_length * (1 - overlap_factor))  # Zeitindex mit Overlap
 
     # Letztes Sprecherintervall hinzufügen
     if current_speaker is not None:
-        segment_end_time = num_segments * segment_length
+        segment_end_time = num_segments * (segment_length * (1 - overlap_factor))
         transcript.append((current_speaker, segment_start_time, segment_end_time))
-        print(f"[{segment_start_time:.2f}s - {segment_end_time:.2f}s] {current_speaker}")
-        
+
     # Ergebnis in Datei speichern
     output_file = os.path.splitext(audio_file)[0] + "_ausgabe.txt"
     with open(output_file, "w", encoding="utf-8") as file:
@@ -644,7 +650,7 @@ def smooth_with_moving_average(predictions, window_size=3):
     smoothed_predictions = uniform_filter1d(predictions, size=window_size, mode='nearest')
     return np.round(smoothed_predictions).astype(int)
 
-def plot_speaker_timeline(transcript, audio_file):
+def plot_speaker_timeline(transcript,methode, audio_file):
     """
     Erstellt eine Zeitleiste mit den Sprechern und ihrer Sprechdauer basierend auf der Segmentierung.
 
@@ -678,11 +684,11 @@ def plot_speaker_timeline(transcript, audio_file):
     ax.legend(unique_handles_labels.values(), unique_handles_labels.keys(), loc="upper right")
 
     plt.xlabel("Time (s)")
-    plt.title("Speaker Timeline")
+    plt.title("Speaker Timeline "+  methode)
     plt.yticks([])
     plt.show()
     
-def plot_speaker_Gantt(transcript, audio_file):
+def plot_speaker_Gantt(transcript,methode, audio_file):
     """
     Erstellt ein Gantt-Diagramm mit den Sprechern und ihrer Sprechdauer basierend auf der Segmentierung.
 
@@ -712,7 +718,7 @@ def plot_speaker_Gantt(transcript, audio_file):
     
     plt.xlabel("Time (s)")
     plt.ylabel("Speakers")
-    plt.title("Speaker Timeline (Gantt Chart)")
+    plt.title("Gantt Chart-Timeline " + methode )
     plt.show()
 
 def audio_to_text(audio_file, transcript, language="en-US"):
