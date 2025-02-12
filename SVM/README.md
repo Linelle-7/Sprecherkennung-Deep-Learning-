@@ -33,7 +33,9 @@ Dieses Projekt ermöglicht die automatische Sprechererkennung in Audiodateien un
 
 #### 2. Skript ausführen
 
-main teil
+In SVM_sharaed_utils.py stehen alle hauptmethoden zum besseren Übersicht.
+In SVM_US.py lassen sich stimmen aus der US_Wahlkamph 2020 zum training und Bearbeitung nutzen und 
+In SVM_EigenStimmen nutzen wir unseren eigenen Stimmen.
 
 ### Hauptfunktionen
 
