@@ -68,4 +68,9 @@ Echtzeit-Speaker-Klassifikation mit gleitendem Durchschnitt (Moving Average).
 
 - Accuracy, Precision, Recall, F1-Score zur Modellbewertung.
 
+## Hilfreiche Quellen
+- https://github.com/ksrvap/Audio-classification-using-SVM-and-CNN/blob/main/Audio_Classification.py​
+- https://scikit-learn.org/stable/model_selection.html
+- https://youtu.be/ZqpSb5p1xQo?si=vcfkGEIYfVlvj45h
+
 Bei Fragen oder Vorschlägen gerne melden! 😊
