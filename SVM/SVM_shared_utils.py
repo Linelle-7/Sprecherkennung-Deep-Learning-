@@ -308,7 +308,7 @@ def train_svm_model_optuna(path, methode,label_map,segment_length, sr=22050):
     X_train= pca.fit_transform(X_train)
     X_test = pca.transform(X_test)"""
     
-    #dies führt zur Overfitting
+
     """selector = SelectKBest(f_classif, k=1000)  # Wähle die 1000 besten Features
     X_train= selector.fit_transform(X_train, y_train)
     X_test =selector.transform(X_test)
